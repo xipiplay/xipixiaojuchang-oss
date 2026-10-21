@@ -1,0 +1,5 @@
+module CCommonCrypto {
+    header "shim.h"
+    link "CommonCrypto"
+    export *
+}
