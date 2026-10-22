@@ -26,7 +26,8 @@ xattr -cr "$APP"
 codesign --force --sign - "$APP"
 
 DMG_DIR="dist/dmg"
-DMG="dist/$APP_NAME-$VERSION.dmg"
+# 英文文件名：GitHub Releases 会把附件名里的中文去掉
+DMG="dist/Xipixiaojuchang-Open-$VERSION.dmg"
 rm -rf "$DMG_DIR" "$DMG"
 mkdir -p "$DMG_DIR"
 cp -R "$APP" "$DMG_DIR/"
