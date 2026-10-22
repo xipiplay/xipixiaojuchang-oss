@@ -10,7 +10,9 @@
 |---|---|
 | ![段落详情](docs/screenshots/segment-detail.png) | ![素材卡](docs/screenshots/image-cards.png) |
 
-> 截图来自作者用本软件制作的短剧《六十块的车神》。
+![主页](docs/screenshots/home.png)
+
+> 截图来自作者用本软件制作的短剧《六十块的车神》等项目。
 
 ## 能做什么
 
