@@ -4,6 +4,10 @@
 
 一个 macOS 原生应用（SwiftUI），把一部短剧剧本一步步做成 AI 视频：从剧本分集、按时长切分、推理分镜，到提取角色 / 场景 / 道具、生成素材图，再到逐段生成视频，都在同一个工作台里完成。
 
+**实机演示**（90 秒）：左边是外部智能体 Codex（监听模式），右边是嬉皮小剧场——时长分割、推理分镜、提取素材、出图、挂素材、生视频，最后 30 秒是生成的成片。
+
+https://github.com/user-attachments/assets/a47bf840-6f4b-4464-ade7-03aff6a31951
+
 ![分镜工作台](docs/screenshots/workbench.png)
 
 | 段落详情：分镜提示词 + 本段剧情 | 素材卡：角色 / 场景 / 道具 |
@@ -108,6 +112,10 @@ swift test
 - **External agent bridge**: instead of calling an API, text-pipeline requests can be dropped into a local inbox and answered by an external coding agent such as Codex. See [`skills/xipi-automation`](skills/xipi-automation).
 
 The UI and prompts are in Chinese.
+
+**Demo** (90 s): Codex as an external agent on the left, the app on the right — splitting, storyboards, asset extraction, images, matching and video; the last 30 s is the generated footage.
+
+https://github.com/user-attachments/assets/a47bf840-6f4b-4464-ade7-03aff6a31951
 
 ![Workbench](docs/screenshots/workbench.png)
 
