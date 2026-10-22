@@ -14,7 +14,7 @@ enum MediaTokenThumbnail {
     static let chipMaxWidth: CGFloat = 104
 
     nonisolated static let directory: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Xipixiaojuchang/media-token", isDirectory: true)
+        .appendingPathComponent("XipixiaojuchangOpen/media-token", isDirectory: true)
 
     /// 生成失败过的（坏文件之类）：本次运行不再试
     private static var failed: Set<String> = []

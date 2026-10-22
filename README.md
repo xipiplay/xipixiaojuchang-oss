@@ -4,6 +4,14 @@
 
 一个 macOS 原生应用（SwiftUI），把一部短剧剧本一步步做成 AI 视频：从剧本分集、按时长切分、推理分镜，到提取角色 / 场景 / 道具、生成素材图，再到逐段生成视频，都在同一个工作台里完成。
 
+![分镜工作台](docs/screenshots/workbench.png)
+
+| 段落详情：分镜提示词 + 本段剧情 | 素材卡：角色 / 场景 / 道具 |
+|---|---|
+| ![段落详情](docs/screenshots/segment-detail.png) | ![素材卡](docs/screenshots/image-cards.png) |
+
+> 截图来自作者用本软件制作的短剧《六十块的车神》。
+
 ## 能做什么
 
 - **剧本流水线**：AI 分集 → 时长分割（如每段 15 / 30 秒）→ 分段命名 → 推理分镜 → 提取素材（角色、场景、道具）。每一步的提示词都能在设置里改。
@@ -12,6 +20,19 @@
 - **生视频**：每一段带着挂好的参考图（以及参考视频、音频）提交给视频服务商；每次提交都是新的一版，失败的版本也保留，可以改了再交。
 - **服务商接入**：生图、生视频渠道支持 OpenAI 规范和 New API 两种接入规范；文字流程可接 OpenAI 兼容的接口（如 DeepSeek），支持流式接收。
 - **外部智能体接力**：文字流程可以不走软件里的 API，而是把请求放进本机收件目录，由 Codex 等外部智能体回答。配套的自动化技能在 [`skills/xipi-automation`](skills/xipi-automation)。
+
+## 下载安装
+
+到 [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases) 下载最新的 `嬉皮小剧场开源版-x.y.z.dmg`，打开后把应用拖进「应用程序」。
+
+安装包没有经过 Apple 公证，第一次打开会提示「无法验证开发者」。处理方法任选一种：
+
+- 在「应用程序」里**右键**点应用 →「打开」→ 再点「打开」；
+- 或者在终端执行：
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/嬉皮小剧场开源版.app"
+```
 
 ## 系统要求
 
@@ -30,6 +51,12 @@ swift build -c release
 ./scripts/make_app.sh
 ```
 
+只打 dmg 安装包（不安装）：
+
+```bash
+./scripts/make_dmg.sh
+```
+
 运行测试：
 
 ```bash
@@ -46,7 +73,7 @@ swift test
 
 ## 数据存放位置
 
-- 应用数据：`~/Library/Application Support/Xipixiaojuchang/`
+- 应用数据：`~/Library/Application Support/XipixiaojuchangOpen/`
 - 项目（剧本、分镜、素材图、视频）：在设置里选定的项目文件夹
 
 ## 目录结构
@@ -79,6 +106,12 @@ swift test
 - **External agent bridge**: instead of calling an API, text-pipeline requests can be dropped into a local inbox and answered by an external coding agent such as Codex. See [`skills/xipi-automation`](skills/xipi-automation).
 
 The UI and prompts are in Chinese.
+
+![Workbench](docs/screenshots/workbench.png)
+
+### Download
+
+Grab the latest `嬉皮小剧场开源版-x.y.z.dmg` from [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases). The app is not notarized: on first launch, right-click the app in Applications → Open, or run `xattr -dr com.apple.quarantine "/Applications/嬉皮小剧场开源版.app"`.
 
 ### Requirements
 

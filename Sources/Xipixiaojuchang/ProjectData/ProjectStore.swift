@@ -18,7 +18,7 @@ final class ProjectStore: @unchecked Sendable {
 
     let root: URL
     /// 存盘用的串行队列
-    let queue = DispatchQueue(label: "local.xipixiaojuchang.projectsave", qos: .utility)
+    let queue = DispatchQueue(label: "io.github.xipiplay.xipixiaojuchang.projectsave", qos: .utility)
     private let lock = NSLock()
     private var _saved: [String: ProjectDocument] = [:]
     private var _unreadable: [String: String] = [:]

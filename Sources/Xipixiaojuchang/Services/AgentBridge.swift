@@ -155,7 +155,7 @@ final class AgentBridge {
     /// 批量任务时状态几乎每秒都变）。主线程只组装、比较；测试默认同步写，好在 `tick()` 之后马上读文件
     private let writesStatusInBackground: Bool
     /// 状态文件写盘的串行队列：按顺序落盘，后一次覆盖前一次
-    private let statusWriteQueue = DispatchQueue(label: "local.xipixiaojuchang.agent-status", qos: .utility)
+    private let statusWriteQueue = DispatchQueue(label: "io.github.xipiplay.xipixiaojuchang.agent-status", qos: .utility)
 
     init(root: URL, writesStatusInBackground: Bool = false) {
         self.root = root

@@ -23,7 +23,7 @@ python3 stress_inject.py clean       # 按 projectKey 移除压测卡片 + 项�
 
 ## 安全约定
 
-- 注入/挂载前**自动全量备份**到 `~/Library/Application Support/Xipixiaojuchang/backups/`
+- 注入/挂载前**自动全量备份**到 `~/Library/Application Support/XipixiaojuchangOpen/backups/`
 - 假数据一律可识别：项目 key `STRESS-100-100`、假任务 id 前缀 `stress-vid-`、模型名 `压测-勿用`
 - 全程零成本：只用本地已有文件，不下载、不生成、不提交
 - 日期格式别写错：`shots.json` / `tasks.json` 是 ISO8601 字符串；`imageItems.json` 是

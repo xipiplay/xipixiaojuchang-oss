@@ -13,8 +13,8 @@
 import json, pathlib, uuid, shutil, sys, datetime
 
 HOME = pathlib.Path.home()
-SUP = HOME / 'Library/Application Support/Xipixiaojuchang'
-PREF = HOME / 'Library/Preferences/local.xipixiaojuchang.plist'
+SUP = HOME / 'Library/Application Support/XipixiaojuchangOpen'
+PREF = HOME / 'Library/Preferences/io.github.xipiplay.xipixiaojuchang.plist'
 KEY = 'STRESS-100-100'
 VIDEO_DIR = HOME / 'Desktop/缓存文件'
 FAKE_TASK_PREFIX = 'stress-vid-'
@@ -36,7 +36,7 @@ def backup(tag):
     bk.mkdir(parents=True)
     for f in ('shots.json', 'imageItems.json', 'tasks.json', 'library.json'):
         shutil.copy2(SUP / f, bk / f)
-    shutil.copy2(PREF, bk / 'local.xipixiaojuchang.plist')
+    shutil.copy2(PREF, bk / 'io.github.xipiplay.xipixiaojuchang.plist')
     print('备份 →', bk)
 
 

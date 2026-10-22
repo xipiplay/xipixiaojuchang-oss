@@ -154,7 +154,7 @@ struct WorkbenchSegmentGrid: View, Equatable {
     /// 测试用：记下建过哪几张卡（核对懒加载还在：不是一次把几百张全建出来）。nil = 不数
     nonisolated(unsafe) static var testBuiltCells: Set<Spot>?
     /// 滚动内容高度按 `SectionLayout.contentHeight` 定死（2026-10-16 A/B 实验 B，默认开）：懒加载网格自己估的总高会随滑动变，
-    /// 怀疑它影响妙控鼠标连续滑动 / 惯性的手感。切回 A（让网格自己估）：`defaults write local.xipixiaojuchang workbenchGridStableHeight -bool NO`
+    /// 怀疑它影响妙控鼠标连续滑动 / 惯性的手感。切回 A（让网格自己估）：`defaults write io.github.xipiplay.xipixiaojuchang workbenchGridStableHeight -bool NO`
     static let stableHeightKey = "workbenchGridStableHeight"
     @AppStorage(WorkbenchSegmentGrid.stableHeightKey) private var stableHeight = true
 

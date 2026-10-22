@@ -1,5 +1,5 @@
 #!/bin/bash
-# 构建并打包「嬉皮小剧场.app」安装到 ~/Applications 并启动
+# 构建并打包「嬉皮小剧场开源版.app」安装到 ~/Applications 并启动
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -12,7 +12,7 @@ echo "== swift build -c release =="
 swift build -c release
 
 APP_DIR="dist"
-APP="$APP_DIR/嬉皮小剧场.app"
+APP="$APP_DIR/嬉皮小剧场开源版.app"
 INSTALL_DIR="$HOME/Applications"
 
 rm -rf "$APP"
@@ -32,7 +32,7 @@ xattr -cr "$APP"
 codesign --force --sign - "$APP"
 
 mkdir -p "$INSTALL_DIR"
-BIN="$INSTALL_DIR/嬉皮小剧场.app/Contents/MacOS/Xipixiaojuchang"
+BIN="$INSTALL_DIR/嬉皮小剧场开源版.app/Contents/MacOS/Xipixiaojuchang"
 
 # 先让旧实例退出，再换文件（open 遇同 bundle id 的旧实例只会激活旧实例，不启动新版）。
 # 新版收到 TERM 会正常退出（先落盘、清掉「运行中」标记）；还没带这个处理的旧版会被直接结束，
@@ -47,8 +47,8 @@ if pgrep -f "$BIN" >/dev/null 2>&1; then
   pkill -KILL -f "$BIN" 2>/dev/null || true
 fi
 
-rm -rf "$INSTALL_DIR/嬉皮小剧场.app"
+rm -rf "$INSTALL_DIR/嬉皮小剧场开源版.app"
 cp -R "$APP" "$INSTALL_DIR/"
 
-echo "== 已安装到 $INSTALL_DIR/嬉皮小剧场.app =="
-open "$INSTALL_DIR/嬉皮小剧场.app"
+echo "== 已安装到 $INSTALL_DIR/嬉皮小剧场开源版.app =="
+open "$INSTALL_DIR/嬉皮小剧场开源版.app"

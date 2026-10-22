@@ -53,7 +53,7 @@ description: 驱动「嬉皮小剧场」macOS 软件批量跑一部剧本的文�
 | 子 | `xipi answer <id> [文件]` | 提交回答（默认读 `answer.txt`） |
 | 子 | `xipi fail <id> "原因"` | 做不了时报告失败 |
 
-目录默认 `~/Library/Application Support/Xipixiaojuchang/AgentBridge/`（`--dir` 或环境变量 `XIPI_BRIDGE` 可改）。
+目录默认 `~/Library/Application Support/XipixiaojuchangOpen/AgentBridge/`（`--dir` 或环境变量 `XIPI_BRIDGE` 可改）。
 
 ## 监听模式：用户点哪一步，你做哪一步（像接入的 API 一样）
 
@@ -115,8 +115,8 @@ description: 驱动「嬉皮小剧场」macOS 软件批量跑一部剧本的文�
 1. `xipi check` 必须通过。不通过就停下，告诉用户：**打开软件 → 设置 → 剧本流水线 → 打开「外部智能体接力」→ 保存**。软件要一直开着、电脑不要睡眠。
 2. 提醒用户：跑的时候别在软件里操作（导入剧本会切到新项目页面）。用户能在软件左栏「AI」图标的右上角看到状态：**黄点 = 接力已开、在等智能体；绿点 = 智能体在工作**（发过命令、领了请求或交了回答之后一分钟内，或有请求被领走还没交回答，都算在工作）。你发出第一条命令（如 `ping`）后，黄点就会变绿。
 3. **沙箱 / 权限**：`xipi check` 报 `Operation not permitted` 或找不到目录时——
-   - 让用户把文件夹 `~/Library/Application Support/Xipixiaojuchang/AgentBridge/` 授权给你（Gemini：Connected Folders；Codex：工作区 / 权限设置）。这个目录是唯一需要的，`xipi.py` 的工作文件也放在它里面的 `work/`，不用别的目录。
-   - 沙箱里 `$HOME` 常常不是 `/Users/<用户名>`：用 `--dir "/Users/<用户名>/Library/Application Support/Xipixiaojuchang/AgentBridge"`（或环境变量 `XIPI_BRIDGE`）写绝对路径。
+   - 让用户把文件夹 `~/Library/Application Support/XipixiaojuchangOpen/AgentBridge/` 授权给你（Gemini：Connected Folders；Codex：工作区 / 权限设置）。这个目录是唯一需要的，`xipi.py` 的工作文件也放在它里面的 `work/`，不用别的目录。
+   - 沙箱里 `$HOME` 常常不是 `/Users/<用户名>`：用 `--dir "/Users/<用户名>/Library/Application Support/XipixiaojuchangOpen/AgentBridge"`（或环境变量 `XIPI_BRIDGE`）写绝对路径。
    - 实在跑不了 `xipi.py`：照文末「附录：手写协议」直接读写文件，格式是同一个。
 4. 弄清要跑**哪部剧本**：
    - 用户给了 TXT 文件路径 → 走「导入」。**导入前先 `xipi status`：已有同名（或明显是同一部）的项目，就问用户「复用已有的，还是新建一个」**，别擅自新建（`import-script` 每次都会新建项目，软件只会给重名的自动加序号）。

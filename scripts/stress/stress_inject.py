@@ -13,9 +13,9 @@
 import json, plistlib, uuid, shutil, subprocess, sys, datetime, pathlib
 
 HOME = pathlib.Path.home()
-SUP = HOME / 'Library/Application Support/Xipixiaojuchang'
-PREF = HOME / 'Library/Preferences/local.xipixiaojuchang.plist'
-DOMAIN = 'local.xipixiaojuchang'
+SUP = HOME / 'Library/Application Support/XipixiaojuchangOpen'
+PREF = HOME / 'Library/Preferences/io.github.xipiplay.xipixiaojuchang.plist'
+DOMAIN = 'io.github.xipiplay.xipixiaojuchang'
 
 KEY = 'STRESS-100-100'          # 压测项目 key（清理按它）
 NAME = '压测100+100'              # 项目显示名
@@ -50,7 +50,7 @@ def inject():
     bk.mkdir(parents=True)
     for f in ('shots.json', 'imageItems.json', 'tasks.json', 'library.json'):
         shutil.copy2(SUP / f, bk / f)
-    shutil.copy2(PREF, bk / 'local.xipixiaojuchang.plist')
+    shutil.copy2(PREF, bk / 'io.github.xipiplay.xipixiaojuchang.plist')
     print('备份 →', bk)
 
     iso = now_iso()
@@ -106,7 +106,7 @@ def add(count):
     bk.mkdir(parents=True)
     for f in ('shots.json', 'imageItems.json', 'tasks.json', 'library.json'):
         shutil.copy2(SUP / f, bk / f)
-    shutil.copy2(PREF, bk / 'local.xipixiaojuchang.plist')
+    shutil.copy2(PREF, bk / 'io.github.xipiplay.xipixiaojuchang.plist')
     print('备份 →', bk)
 
     iso = now_iso()

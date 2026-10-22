@@ -4,7 +4,7 @@ enum FileLocations {
     private static let videosDirKey = "videosDirectoryPath"
 
     static let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("Xipixiaojuchang", isDirectory: true)
+        .appendingPathComponent("XipixiaojuchangOpen", isDirectory: true)
 
     static var tasksFile: URL { appSupport.appendingPathComponent("tasks.json") }
     static var shotsFile: URL { appSupport.appendingPathComponent("shots.json") }

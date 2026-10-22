@@ -9,7 +9,7 @@
 import difflib
 import argparse, datetime, json, os, sys, time
 
-RELATIVE = "Library/Application Support/Xipixiaojuchang/AgentBridge"
+RELATIVE = "Library/Application Support/XipixiaojuchangOpen/AgentBridge"
 
 
 def default_dir():

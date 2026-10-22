@@ -24,7 +24,7 @@ struct MaterialTransfer: Transferable, Codable {
 extension UTType {
     /// 素材拖拽专用类型。`exportedAs` = 本 App 自己定义、自己消费。
     /// 标识与 `Info.plist` 里的 `UTTypeIdentifier` 必须**逐字一致**，改一个就要改另一个。
-    static let xipixiMaterial = UTType(exportedAs: "local.xipixiaojuchang.material")
+    static let xipixiMaterial = UTType(exportedAs: "io.github.xipiplay.xipixiaojuchang.material")
 }
 
 /// 素材库条目（全局素材池，拖入即预上传为直链供分镜引用）

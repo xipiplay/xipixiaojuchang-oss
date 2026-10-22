@@ -5,17 +5,17 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
 	<key>CFBundleDisplayName</key>
-	<string>嬉皮小剧场</string>
+	<string>嬉皮小剧场开源版</string>
 	<key>CFBundleExecutable</key>
 	<string>Xipixiaojuchang</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.xipixiaojuchang</string>
+	<string>io.github.xipiplay.xipixiaojuchang</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>嬉皮小剧场</string>
+	<string>嬉皮小剧场开源版</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -40,7 +40,7 @@
 			<key>UTTypeDescription</key>
 			<string>嬉皮小剧场素材</string>
 			<key>UTTypeIdentifier</key>
-			<string>local.xipixiaojuchang.material</string>
+			<string>io.github.xipiplay.xipixiaojuchang.material</string>
 		</dict>
 	</array>
 </dict>
