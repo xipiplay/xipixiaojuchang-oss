@@ -86,8 +86,8 @@ enum ReasoningEffortOption {
 enum PipelineProviderStore {
     static let defaultsKey = "scriptPipelineProviders"
 
-    /// 设置页用：存过列表就读列表；没存过就把现有的单份配置（老的、样例的、旧版的）变成第一张卡片，不用重填
-    static func load(defaults: UserDefaults = .standard, sampleURL: URL? = PipelineAISettingsStore.samplePreferencesURL)
+    /// 设置页用：存过列表就读列表；没存过就把现有的单份配置（老的、旧版的）变成第一张卡片，不用重填
+    static func load(defaults: UserDefaults = .standard)
         -> (book: PipelineProviderBook, error: String?) {
         if let data = defaults.data(forKey: defaultsKey) {
             guard let book = try? JSONDecoder().decode(PipelineProviderBook.self, from: data) else {
@@ -95,7 +95,7 @@ enum PipelineProviderStore {
             }
             return (book, nil)
         }
-        let loaded = PipelineAISettingsStore.load(defaults: defaults, sampleURL: sampleURL)
+        let loaded = PipelineAISettingsStore.load(defaults: defaults)
         if let error = loaded.error { return (PipelineProviderBook(), error) }
         return (migrated(from: loaded.config), nil)
     }

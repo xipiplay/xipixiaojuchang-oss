@@ -57,10 +57,6 @@ enum PipelineSettingsError: LocalizedError {
 enum PipelineAISettingsStore {
     static let defaultsKey = "scriptPipelineAI"
     static let legacyKey = "pipelinePreviewAI"
-    static var samplePreferencesURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Preferences/ScriptPipelineSample.plist")
-    }
 
     struct Loaded {
         var config: PipelineAISettings
@@ -68,8 +64,10 @@ enum PipelineAISettingsStore {
         var error: String?
     }
 
-    static func load(defaults: UserDefaults = .standard, sampleURL: URL? = samplePreferencesURL) -> Loaded {
-        // 设置页存过「服务商列表」（2026-10-11）：以它里面当前使用的那个为准；没存过才走下面的老路径（老的单份配置 / 样例 / 旧版）
+    /// 2026-10-23 去掉了读早期样例程序 `~/Library/Preferences/ScriptPipelineSample.plist` 的兜底：
+    /// 那是别的程序留下的文件（里面带密钥），开源版第一次打开会把它读进来
+    static func load(defaults: UserDefaults = .standard) -> Loaded {
+        // 设置页存过「服务商列表」（2026-10-11）：以它里面当前使用的那个为准；没存过才走下面的老路径（老的单份配置 / 旧版）
         if let data = defaults.data(forKey: PipelineProviderStore.defaultsKey) {
             guard let book = try? JSONDecoder().decode(PipelineProviderBook.self, from: data) else {
                 return Loaded(config: PipelineAISettings(), error: "已保存的服务商列表无法读取，原配置未被覆盖；请检查后重新保存。")
@@ -81,12 +79,6 @@ enum PipelineAISettingsStore {
                 return Loaded(config: PipelineAISettings(), error: "已保存的流水线配置无法读取，原配置未被覆盖；请检查后重新保存。")
             }
             return Loaded(config: config)
-        }
-        if let sampleURL, let data = try? Data(contentsOf: sampleURL),
-           let plist = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any],
-           let configData = plist["aiConfig"] as? Data,
-           let config = try? JSONDecoder().decode(PipelineAISettings.self, from: configData) {
-            return Loaded(config: config, inherited: true)
         }
         if let data = defaults.data(forKey: legacyKey),
            let config = try? JSONDecoder().decode(PipelineAISettings.self, from: data) {

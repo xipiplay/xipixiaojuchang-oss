@@ -49,7 +49,7 @@ final class PipelineProviderTests: XCTestCase {
         config.reasoningEffort = "low"; config.agentMode = true
         try PipelineAISettingsStore.save(config, defaults: defaults)
 
-        let (book, error) = PipelineProviderStore.load(defaults: defaults, sampleURL: nil)
+        let (book, error) = PipelineProviderStore.load(defaults: defaults)
         XCTAssertNil(error)
         XCTAssertEqual(book.providers.count, 1)
         XCTAssertEqual(book.providers[0].name, "integrate.api.nvidia.com", "名字取地址的域名")
@@ -62,7 +62,7 @@ final class PipelineProviderTests: XCTestCase {
 
     func testAnUntouchedInstallStartsWithNoCards() {
         let (defaults, name) = isolatedDefaults(); defer { defaults.removePersistentDomain(forName: name) }
-        XCTAssertEqual(PipelineProviderStore.load(defaults: defaults, sampleURL: nil).book.providers.count, 0)
+        XCTAssertEqual(PipelineProviderStore.load(defaults: defaults).book.providers.count, 0)
     }
 
     func testSavingTheListMakesTheActiveProviderTheConfigAndKeepsTheOldKeyInSync() throws {
@@ -70,10 +70,10 @@ final class PipelineProviderTests: XCTestCase {
         let book = PipelineProviderBook(providers: [nvidia()], activeID: nil, agentMode: nil)
         try PipelineProviderStore.save(book, defaults: defaults)
 
-        let loaded = PipelineAISettingsStore.load(defaults: defaults, sampleURL: nil)
+        let loaded = PipelineAISettingsStore.load(defaults: defaults)
         XCTAssertEqual(loaded.config.model, "z-ai/glm-5.3")
         XCTAssertEqual(loaded.config.reasoningEffort, "low")
-        XCTAssertEqual(PipelineProviderStore.load(defaults: defaults, sampleURL: nil).book, book)
+        XCTAssertEqual(PipelineProviderStore.load(defaults: defaults).book, book)
         let mirrored = try JSONDecoder().decode(PipelineAISettings.self, from: try XCTUnwrap(defaults.data(forKey: PipelineAISettingsStore.defaultsKey)))
         XCTAssertEqual(mirrored.baseURL, "https://integrate.api.nvidia.com/v1", "老的单份配置也同步了一份")
     }
@@ -85,15 +85,15 @@ final class PipelineProviderTests: XCTestCase {
         try PipelineProviderStore.save(PipelineProviderBook(providers: [half], activeID: half.id), defaults: defaults)
         let mirrored = try JSONDecoder().decode(PipelineAISettings.self, from: try XCTUnwrap(defaults.data(forKey: PipelineAISettingsStore.defaultsKey)))
         XCTAssertEqual(mirrored.baseURL, "https://old.example", "没配全的不写进去")
-        XCTAssertEqual(PipelineAISettingsStore.load(defaults: defaults, sampleURL: nil).config.model, "", "但读配置时以列表为准：这家还没选模型")
+        XCTAssertEqual(PipelineAISettingsStore.load(defaults: defaults).config.model, "", "但读配置时以列表为准：这家还没选模型")
     }
 
     func testAnUnreadableListIsReportedAndNotOverwrittenByReading() {
         let (defaults, name) = isolatedDefaults(); defer { defaults.removePersistentDomain(forName: name) }
         let junk = Data("不是 JSON".utf8)
         defaults.set(junk, forKey: PipelineProviderStore.defaultsKey)
-        XCTAssertNotNil(PipelineProviderStore.load(defaults: defaults, sampleURL: nil).error)
-        XCTAssertNotNil(PipelineAISettingsStore.load(defaults: defaults, sampleURL: nil).error)
+        XCTAssertNotNil(PipelineProviderStore.load(defaults: defaults).error)
+        XCTAssertNotNil(PipelineAISettingsStore.load(defaults: defaults).error)
         XCTAssertEqual(defaults.data(forKey: PipelineProviderStore.defaultsKey), junk)
     }
 
