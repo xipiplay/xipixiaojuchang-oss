@@ -23,7 +23,7 @@
 
 ## 下载安装
 
-到 [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases) 下载最新的 `嬉皮小剧场开源版-x.y.z.dmg`，打开后把应用拖进「应用程序」。
+到 [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases) 下载最新的 `Xipixiaojuchang-Open-x.y.z.dmg`，打开后把应用拖进「应用程序」。
 
 安装包没有经过 Apple 公证，第一次打开会提示「无法验证开发者」。处理方法任选一种：
 
@@ -111,7 +111,7 @@ The UI and prompts are in Chinese.
 
 ### Download
 
-Grab the latest `嬉皮小剧场开源版-x.y.z.dmg` from [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases). The app is not notarized: on first launch, right-click the app in Applications → Open, or run `xattr -dr com.apple.quarantine "/Applications/嬉皮小剧场开源版.app"`.
+Grab the latest `Xipixiaojuchang-Open-x.y.z.dmg` from [Releases](https://github.com/xipiplay/xipixiaojuchang-oss/releases). The app is not notarized: on first launch, right-click the app in Applications → Open, or run `xattr -dr com.apple.quarantine "/Applications/嬉皮小剧场开源版.app"`.
 
 ### Requirements
 
