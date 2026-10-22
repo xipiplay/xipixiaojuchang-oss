@@ -476,6 +476,10 @@ final class AppModel {
     /// 批量设置参数是批量提交的第一步（2026-10-12 用户定：拖选 → 批量提交 → 设参数 → 应用 → 确认提交）。
     /// 弹窗里点「应用」就 +1，底部工具条看到变化接着弹提交确认
     var batchParamsAppliedForSubmit = 0
+    /// 批量设置参数的草稿（D08，2026-10-23 用户定「点取消就不写回」）：点「应用」时先写进卡片（检查和提交都读卡片），
+    /// 这里记下改之前的那几张；提交确认点「提交」/「只保存参数」才算数（`keepBatchParamDraft`），
+    /// 点「取消」或检查没过就按原值改回去（`revertBatchParamDraft`）
+    @ObservationIgnored private(set) var batchParamDraftOriginals: (shots: [ShotDraft], images: [ImageGenItem])?
 
     /// 「批量解析」粘贴框里的文本。
     /// 原来在 `ImageWorkspaceView` 的 `@State` 里、靠 `@Binding` 层层传下去；
@@ -3923,6 +3927,51 @@ final class AppModel {
             }
         }
         return prompts.count
+    }
+
+    /// 批量提交那一步的「应用」：先记原值再写（见 `batchParamDraftOriginals`）
+    func draftBatchParameters(_ config: BatchParamConfig, ids: [UUID]) {
+        let targets = Set(ids)
+        batchParamDraftOriginals = (shots.filter { targets.contains($0.id) }, [])
+        batchSetParameters(config, ids: ids)
+    }
+
+    func draftBatchImageParams(ids: [UUID], model: String?, aspect: ImageAspect, quality: ImageQuality) {
+        let targets = Set(ids)
+        batchParamDraftOriginals = ([], imageItems.filter { targets.contains($0.id) })
+        batchSetImageParams(ids: ids, model: model, aspect: aspect, quality: quality)
+    }
+
+    /// 草稿算数：参数留在卡片上
+    func keepBatchParamDraft() { batchParamDraftOriginals = nil }
+
+    /// 草稿作废：只把参数几项（模型 / 分辨率 / 画幅 / 时长 / 参数改动标记）改回原值，卡片别的内容不动
+    func revertBatchParamDraft() {
+        guard let originals = batchParamDraftOriginals else { return }
+        batchParamDraftOriginals = nil
+        if !originals.shots.isEmpty {
+            let byID = Dictionary(uniqueKeysWithValues: originals.shots.map { ($0.id, $0) })
+            for i in shots.indices {
+                guard let old = byID[shots[i].id] else { continue }
+                shots[i].model = old.model
+                shots[i].resolution = old.resolution
+                shots[i].aspectRatio = old.aspectRatio
+                shots[i].duration = old.duration
+                shots[i].paramsDirty = old.paramsDirty
+            }
+            persistShots()
+        }
+        if !originals.images.isEmpty {
+            let byID = Dictionary(uniqueKeysWithValues: originals.images.map { ($0.id, $0) })
+            for i in imageItems.indices {
+                guard let old = byID[imageItems[i].id] else { continue }
+                imageItems[i].model = old.model
+                imageItems[i].aspectRatio = old.aspectRatio
+                imageItems[i].quality = old.quality
+                imageItems[i].paramsDirty = old.paramsDirty
+            }
+            persistImageItems()
+        }
     }
 
     /// 批量设置参数：**只应用到 `ids` 指定的分镜**（2026-09-26 用户定："只对选中的生效"）。

@@ -994,8 +994,9 @@ struct BatchImageParamView: View {
                 Spacer()
                 Button("取消") { onClose() }
                 Button("应用") {
-                    // 只对**选中的**生效（2026-09-26 用户定）；模型为空（默认项「请选择模型」）= 不改模型
-                    app.batchSetImageParams(
+                    // 只对**选中的**生效（2026-09-26 用户定）；模型为空（默认项「请选择模型」）= 不改模型；
+                    // 先当草稿，提交确认里点「取消」会改回去（D08）
+                    app.draftBatchImageParams(
                         ids: app.batchImageScopeIDs,
                         model: model.isEmpty ? nil : model,
                         aspect: aspect,

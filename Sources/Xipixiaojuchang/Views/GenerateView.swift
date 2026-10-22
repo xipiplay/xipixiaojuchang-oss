@@ -5953,8 +5953,8 @@ struct BatchParamView: View {
                 Spacer()
                 Button("取消") { onClose() }
                 Button("应用") {
-                    // 只对**选中的**生效（2026-09-26 用户定）
-                    app.batchSetParameters(BatchParamConfig(
+                    // 只对**选中的**生效（2026-09-26 用户定）；先当草稿，提交确认里点「取消」会改回去（D08）
+                    app.draftBatchParameters(BatchParamConfig(
                         model: model,
                         resolution: resolution,
                         aspectRatio: aspectRatio,

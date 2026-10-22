@@ -807,8 +807,11 @@ struct RootView: View {
                  : "将删除这 \(selectionCount) 个图片条目及其生成结果，此操作不可撤销。")
         }
         .alert("批量提交确认", isPresented: $showBatchSubmitConfirm) {
-            Button("取消", role: .cancel) {}
+            // 刚才设的参数是草稿（D08）：取消 = 参数也不改；「只保存参数」= 不提交、参数留下
+            Button("取消", role: .cancel) { app.revertBatchParamDraft() }
+            Button("只保存参数") { app.keepBatchParamDraft() }
             Button("提交 \(selectionCount) 个") {
+                app.keepBatchParamDraft()
                 if app.batchTargetsShots {
                     let targets = app.currentShots.filter { app.selectedShotIDs.contains($0.id) }
                     app.batchSubmitExecute(shots: targets)
@@ -838,8 +841,8 @@ struct RootView: View {
             }
         } message: {
             Text(app.batchTargetsShots
-                 ? "参数已应用。将提交选中的 \(selectionCount) 个分镜，会产生费用。" + batchSubmitNote
-                 : "参数已应用。将提交选中的 \(selectionCount) 个图片条目，会产生费用。")
+                 ? "将按刚才设的参数提交选中的 \(selectionCount) 个分镜，会产生费用。点「取消」参数也不改。" + batchSubmitNote
+                 : "将按刚才设的参数提交选中的 \(selectionCount) 个图片条目，会产生费用。点「取消」参数也不改。")
         }
         // 批量匹配：选中的里有还没入库的图 → 先问一句（和工作台「匹配」「应用素材」一样，视频生成要用素材库里的图）
         .alert("有 \(batchMatchPendingLibrary) 张图还没入库", isPresented: Binding(get: { batchMatchPendingLibrary > 0 }, set: { if !$0 { batchMatchPendingLibrary = 0 } })) {
@@ -943,14 +946,19 @@ struct RootView: View {
     /// 批量设置参数点了「应用」之后：完整检查一遍（含模型、时长），都满足就弹提交确认
     private func prepareBatchSubmit() {
         let reasons = batchSubmitBlockers(includingParams: true)
-        guard reasons.isEmpty else { showBatchSubmitBlocked(reasons); return }
+        guard reasons.isEmpty else {
+            // 按刚才的参数交不了 → 这次设的参数也不留（D08：没交就不变）
+            app.revertBatchParamDraft()
+            showBatchSubmitBlocked(reasons, note: "刚才设的参数没有保存。")
+            return
+        }
         batchSubmitNote = app.batchTargetsShots ? unmatchedSelectionNote : ""
         showBatchSubmitConfirm = true
     }
 
-    private func showBatchSubmitBlocked(_ reasons: [String]) {
+    private func showBatchSubmitBlocked(_ reasons: [String], note: String = "") {
         shellInfoTitle = "还不能提交"
-        shellInfoMessage = "选中的\(app.batchTargetsShots ? "分镜" : "条目")里有 \(reasons.joined(separator: "、"))。请先处理再提交。"
+        shellInfoMessage = "选中的\(app.batchTargetsShots ? "分镜" : "条目")里有 \(reasons.joined(separator: "、"))。请先处理再提交。" + note
         shellShowInfo = true
     }
 
