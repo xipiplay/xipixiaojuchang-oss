@@ -449,13 +449,18 @@ struct AIStreamText: View {
 private struct JobActions: View {
     @Environment(AppModel.self) private var app
     let entry: JobDrawerView.Entry
+    /// 等用户确认的付费操作（重试会花钱：先弹确认，2026-10-23）
+    @State private var pendingConfirm: Action?
+    @State private var infoMessage: String?
 
     var body: some View {
         let buttons = actions
         if !buttons.isEmpty {
             HStack(spacing: 6) {
                 ForEach(buttons, id: \.title) { action in
-                    Button(action.title, action: action.run)
+                    Button(action.title) {
+                        if action.confirm != nil { pendingConfirm = action } else { action.run() }
+                    }
                         .buttonStyle(OutlineButtonStyle())
                         .controlSize(.mini)
                         .help(action.help)
@@ -464,12 +469,26 @@ private struct JobActions: View {
             }
             .padding(.leading, 6)
             .padding(.bottom, 4)
+            .alert(pendingConfirm?.confirm?.title ?? "", isPresented: Binding(
+                get: { pendingConfirm != nil }, set: { if !$0 { pendingConfirm = nil } })) {
+                Button("取消", role: .cancel) {}
+                Button(pendingConfirm?.title ?? "确定") { pendingConfirm?.run() }
+            } message: {
+                Text(pendingConfirm?.confirm?.message ?? "")
+            }
+            .alert("提示", isPresented: Binding(get: { infoMessage != nil }, set: { if !$0 { infoMessage = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(infoMessage ?? "")
+            }
         }
     }
 
     private struct Action {
         var title: String
         var help: String
+        /// 非 nil = 点了先弹这个确认框，确认后才 `run`
+        var confirm: (title: String, message: String)? = nil
         var run: () -> Void
     }
 
@@ -489,8 +508,10 @@ private struct JobActions: View {
                 }]
             }
             if task.phase == .failed, let shot = app.shotForTask(task) {
-                return [Action(title: "重试", help: "按分镜现在的提示词和参数重新提交") {
-                    if placeholder { app.deleteTask(id: task.id) }
+                // 失败的这一版留在历史里，重试是新的一版（version-history-rule）；原来提交失败的占位会先被删掉
+                return [Action(title: "重试", help: "按分镜现在的提示词和参数重新提交",
+                               confirm: ("重试这条视频？", "会按分镜现在的提示词和参数重新提交 1 个视频，产生费用。失败的这一版留在历史里。")) {
+                    if let blocker = JobRetry.videoBlocker(shotID: shot.id, app: app) { infoMessage = blocker; return }
                     app.submitShot(shot.id)
                 }]
             }
@@ -502,7 +523,11 @@ private struct JobActions: View {
                 }]
             }
             if item.status == .failed {
-                return [Action(title: "重试", help: "按卡片现在的提示词和参数重新生成") { app.requestImageGeneration(item.id) }]
+                return [Action(title: "重试", help: "按卡片现在的提示词和参数重新生成",
+                               confirm: ("重试这张图？", "会按卡片现在的提示词和参数重新生成 1 张图，产生费用。失败的这一版留在历史里。")) {
+                    if let blocker = JobRetry.imageBlocker(itemID: item.id, app: app) { infoMessage = blocker; return }
+                    app.requestImageGeneration(item.id)
+                }]
             }
             return []
         case .ai(let record):
@@ -517,5 +542,30 @@ private struct JobActions: View {
             }
             return list
         }
+    }
+}
+
+/// 任务抽屉「重试」提交前的检查（2026-10-23）：和段落详情页 / 生图卡的提交前检查同一口径，
+/// 返回 nil = 可以交；否则是要告诉用户的原因（不偷偷跳过、也不当成一次失败记进历史）
+@MainActor
+enum JobRetry {
+    static func videoBlocker(shotID: UUID, app: AppModel) -> String? {
+        guard let shot = app.shots.first(where: { $0.id == shotID }) else { return "这条分镜已经不在了。" }
+        let issues = ShotValidator.validate(shot)
+        if !issues.isEmpty { return issues.joined(separator: "；") + "。" }
+        if !WorkbenchBatch.videoModelConfigured(shot, app: app) {
+            return "这条分镜选的模型「\(shot.model)」已经不在配置里，先换一个模型再重试。"
+        }
+        return nil
+    }
+
+    static func imageBlocker(itemID: UUID, app: AppModel) -> String? {
+        guard let item = app.imageItems.first(where: { $0.id == itemID }) else { return "这张卡片已经不在了。" }
+        if app.imageModelNames.isEmpty { return "还没有可用的图片模型，请先到设置里添加渠道与图片模型。" }
+        if let m = item.model, !m.isEmpty, !app.imageModelNames.contains(m) {
+            return "这张卡片选的模型「\(m)」已经不在配置里，先换一个模型再重试。"
+        }
+        if item.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "这张卡片还没有提示词。" }
+        return nil
     }
 }

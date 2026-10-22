@@ -287,6 +287,7 @@ struct WorkbenchSegmentGrid: View, Equatable {
                     .onScrollPhaseChange { old, phase, context in
                         let position = layout.position(at: context.geometry.contentOffset.y + context.geometry.contentInsets.top,
                                                        viewport: metrics.viewportHeight)
+                        if phase == .idle { Self.logScrollStop(context.geometry, layout: layout, columns: columns, position: position) }
                         guard layout.episodes.indices.contains(position) else { return }
                         report(metrics.phaseChanged(from: old, to: phase, episode: layout.episodes[position]))
                     }
@@ -304,6 +305,9 @@ struct WorkbenchSegmentGrid: View, Equatable {
                     // 按新位置表把当前集校准一次（2026-10-18 用户：缩放后集号对不上）
                     .onGeometryChange(for: Columns.self) { Self.columns(forWidth: $0.size.width) } action: { new in
                         let columnCountChanged = new.count != columns.count
+                        if columnCountChanged {
+                            AppLog.write("grid", "换列数 \(columns.count) → \(new.count)，格宽 \(new.width)，算的总高 \(Int(SectionLayout(rowCounts: shown.map(\.rows.count), episodes: shown.map(\.section.episode), columns: new.count, cell: Self.cardHeight).contentHeight))")
+                        }
                         columns = new
                         guard columnCountChanged, revealed else { return }
                         // 等这一轮重排落定再采样（偏移可能被夹住）；连续缩放只让最后一次提交
@@ -461,6 +465,17 @@ struct WorkbenchSegmentGrid: View, Equatable {
         return SegmentCard(model: model, width: cellWidth)
             .equatable()
             .frame(height: Self.cardHeight)
+    }
+
+    /// 诊断（2026-10-22 用户：窗口最大时滑到底，左栏到了最后一集，卡片却到不了、滑不出来）：每次滚动停下记一行，
+    /// 对比「滚动区实际的内容高 / 可滚范围」和「位置表算的总高 / 最后一集起点」，再看列数、格宽对不对得上。只写日志，不改行为
+    private static func logScrollStop(_ geo: ScrollGeometry, layout: SectionLayout, columns: Columns, position: Int) {
+        let maxOffset = geo.contentSize.height - geo.containerSize.height + geo.contentInsets.top + geo.contentInsets.bottom
+        let last = layout.starts.last ?? 0
+        AppLog.write("grid", "停下 宽 \(Int(geo.containerSize.width)) 可视高 \(Int(geo.containerSize.height)) 列 \(columns.count) 格宽 \(columns.width)"
+            + " 内容高 \(Int(geo.contentSize.height)) 算的总高 \(Int(layout.contentHeight)) 偏移 \(Int(geo.contentOffset.y + geo.contentInsets.top))"
+            + " 最大偏移 \(Int(maxOffset)) inset 上\(Int(geo.contentInsets.top))/下\(Int(geo.contentInsets.bottom))"
+            + " 节数 \(layout.starts.count) 最后一节起点 \(Int(last)) 报第 \(position + 1) 节")
     }
 
     /// 段落卡的固定高度：封面 118 + 下面三块（角色 65、剧情两行 34、四步 28，间距 9×2）+ 上下内边距 12×2
