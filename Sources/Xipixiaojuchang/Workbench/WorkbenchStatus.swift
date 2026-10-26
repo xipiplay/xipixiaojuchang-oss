@@ -292,12 +292,22 @@ enum WorkbenchStatus {
                     (input.libraryCardID(ref.libraryItemID).flatMap { cardsByID[$0] }, input.libraryKeyword(ref.libraryItemID))
                 })
             }
+            // 每段每个名字用的那张卡只认一次（挂着的优先，没挂按集号选版本）：下面出图清单、匹配、每段状态三处都用它
+            //（2026-10-27 提速：原来三处各认一遍，认一次要把挂着的参考图和名字逐个比）
+            var resolved: [UUID: [ImageGenItem?]] = [:]
+            for shot in shots {
+                let refs = shotRefs[shot.id]
+                resolved[shot.id] = (shotNames[shot.id] ?? []).map { kind, name in
+                    refs?.attachedCard(kind: kind, name: name) ?? pick(kind, name, episode: number)
+                }
+            }
             // 每个名字用哪张卡：这一段挂着的优先，没挂才按集号选版本（2026-10-17：同名空卡不再盖住挂上的旧图）
             var toGenerate: [ImageGenItem] = []
             for shot in shots {
-                guard let refs = shotRefs[shot.id] else { continue }
-                for (kind, name) in shotNames[shot.id] ?? [] {
-                    guard let card = refs.attachedCard(kind: kind, name: name) ?? pick(kind, name, episode: number) else {
+                guard shotRefs[shot.id] != nil else { continue }
+                let cardsOfShot = resolved[shot.id] ?? []
+                for (offset, (kind, name)) in (shotNames[shot.id] ?? []).enumerated() {
+                    guard let card = cardsOfShot[offset] else {
                         if !(status.missingNames[kind]?.contains(name) ?? false) { status.missingNames[kind, default: []].append(name) }
                         continue
                     }
@@ -322,9 +332,10 @@ enum WorkbenchStatus {
             for shot in shots {
                 guard let refs = shotRefs[shot.id] else { continue }
                 let names = shotNames[shot.id] ?? []
-                let wanted: [String] = names.compactMap { kind, name in
-                    guard let card = refs.attachedCard(kind: kind, name: name) ?? pick(kind, name, episode: number), hasImage(card) else { return nil }
-                    return name
+                let cardsOfShot = resolved[shot.id] ?? []
+                let wanted: [String] = names.enumerated().compactMap { offset, entry in
+                    guard let card = cardsOfShot[offset], hasImage(card) else { return nil }
+                    return entry.1
                 }
                 let attachedAll = wanted.allSatisfy { refs.isAttached($0) }
                 if !attachedAll { status.unmatchedShotIDs.append(shot.id) }
@@ -333,26 +344,31 @@ enum WorkbenchStatus {
 
             // 视频
             var running = 0, completed = 0, failed = 0
+            var videoOfShot: [UUID: VideoState] = [:]
             for shot in shots {
-                switch input.videoState(shot) {
+                let video = input.videoState(shot)
+                videoOfShot[shot.id] = video
+                switch video {
                 case .running: running += 1
                 case .completed: completed += 1
                 case .failed: failed += 1; status.shotsToSubmit.append(shot.id)
                 case .none: status.shotsToSubmit.append(shot.id)
                 }
             }
+            let unmatched = Set(status.unmatchedShotIDs)
             for shot in shots {
-                let refs = shotRefs[shot.id]
-                let names = (shotNames[shot.id] ?? []).map { kind, name -> NameStatus in
-                    guard let card = refs?.attachedCard(kind: kind, name: name) ?? pick(kind, name, episode: number) else { return NameStatus(kind: kind, name: name, state: .missing) }
+                let cardsOfShot = resolved[shot.id] ?? []
+                let names = (shotNames[shot.id] ?? []).enumerated().map { offset, entry -> NameStatus in
+                    let (kind, name) = entry
+                    guard let card = cardsOfShot[offset] else { return NameStatus(kind: kind, name: name, state: .missing) }
                     if hasImage(card) { return NameStatus(kind: kind, name: name, state: .ready) }
                     return NameStatus(kind: kind, name: name, state: .noImage, activity: card.status.isBusy ? .running : (card.status == .failed ? .failed : .idle))
                 }
-                let video = input.videoState(shot)
+                let video = videoOfShot[shot.id] ?? .none
                 let stage: Stage
                 if names.contains(where: { $0.state == .missing }) { stage = .toExtract }
                 else if names.contains(where: { $0.state == .noImage }) { stage = .toGenerateImages }
-                else if status.unmatchedShotIDs.contains(shot.id) { stage = .toMatch }
+                else if unmatched.contains(shot.id) { stage = .toMatch }
                 else {
                     switch video {
                     case .running: stage = .generatingVideo

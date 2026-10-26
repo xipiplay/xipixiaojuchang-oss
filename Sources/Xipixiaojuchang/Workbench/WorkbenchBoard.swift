@@ -3,25 +3,34 @@ import SwiftUI
 /// 工作台的数据接口（2026-10-09）：把 app 里的分镜卡 / 生图卡 / 素材库 / 视频任务交给 `WorkbenchStatus` 算。
 extension AppModel {
     /// 一个分镜的视频现在是什么情况：有任务在排队 / 生成 = 生成中；有完成的 = 已完成；最近一次失败 = 失败；其余 = 还没有
-    func workbenchVideoState(_ shot: ShotDraft) -> WorkbenchStatus.VideoState {
+    /// `phases`：任务 id → 状态，一次算好传进来（2026-10-27 提速：原来每段都在全部任务里一个个找、还要复制整条任务，
+    /// 1150 条任务 × 489 段一次要 100ms，工作台每算一遍还要找两次）
+    func workbenchVideoState(_ shot: ShotDraft, phases: [String: TaskPhase]? = nil) -> WorkbenchStatus.VideoState {
         if submittingShotIDs.contains(shot.id) { return .running }
-        let tasks = shot.taskIDs.compactMap { store.task(id: $0) }
-        if tasks.contains(where: { $0.phase == .queued || $0.phase == .inProgress }) { return .running }
+        // 单独问一段时就地找（几条任务）；整份工作台一次算好的表传进来
+        let states = shot.taskIDs.compactMap { id in phases.map { $0[id] } ?? store.task(id: id)?.phase }
+        if states.contains(where: { $0 == .queued || $0 == .inProgress }) { return .running }
         if shot.showsPendingVersion { return .none }      // 当前是重新推理出来的「待生成」：这一版还没生成
-        if tasks.contains(where: { $0.phase == .completed }) { return .completed }
-        if tasks.last?.phase == .failed { return .failed }
+        if states.contains(.completed) { return .completed }
+        if states.last == .failed { return .failed }
         return .none
+    }
+
+    /// 全部视频任务的 id → 状态（同一个 id 有重复时取靠前的那条，和 `TaskStore.task(id:)` 一样）
+    func taskPhases() -> [String: TaskPhase] {
+        Dictionary(store.tasks.map { ($0.id, $0.phase) }, uniquingKeysWith: { first, _ in first })
     }
 
     func workbenchBoard(project key: String, archive: ProjectPipelineArchive) -> WorkbenchStatus.Board {
         let projectShots = Dictionary(shots.filter { $0.projectKey == key }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let keywords = Dictionary(library.map { ($0.id, $0.matchKeyword) }, uniquingKeysWith: { first, _ in first })
         let sourceCards = Dictionary(library.compactMap { item in item.imageGenItemID.map { (item.id, $0) } }, uniquingKeysWith: { first, _ in first })
+        let phases = taskPhases()
         return WorkbenchStatus.board(.init(
             episodes: archive.episodes, shots: projectShots,
             cards: imageItems.filter { $0.projectKey == key },
             libraryKeyword: { keywords[$0] },
-            videoState: { self.workbenchVideoState($0) },
+            videoState: { self.workbenchVideoState($0, phases: phases) },
             libraryCardID: { sourceCards[$0] },
             shotOrder: shots.compactMap { $0.projectKey == key ? $0.id : nil }))
     }

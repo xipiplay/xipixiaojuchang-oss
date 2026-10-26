@@ -1813,10 +1813,17 @@ final class AppModel {
         persistShots()
     }
 
-    /// 清空分镜的所有素材引用，并从提示词里删除 @ 槽位 token
+    /// 「清空素材」对提示词做的事（数据和编辑框里的同一套）：去掉「图N / 视频N / 音频N」和【音色】那一行
+    ///（音色跟着角色图走，图都没了它也该走；2026-10-27 用户：清空后文本音色还留着）
+    static func strippingMaterials(_ prompt: String) -> String {
+        ShotVoiceSync.removingTagLine(stripAllTokens(prompt))
+    }
+
+    /// 清空分镜的所有素材引用，提示词按 `strippingMaterials` 清理
     func clearShotMaterials(_ shotID: UUID) {
         guard let idx = shots.firstIndex(where: { $0.id == shotID }) else { return }
-        shots[idx].prompt = Self.stripAllTokens(shots[idx].prompt)
+        shots[idx].prompt = Self.strippingMaterials(shots[idx].prompt)
+        voiceSyncSkips[shotID] = nil
         shots[idx].imageRefs.removeAll()
         shots[idx].videoRefs.removeAll()
         shots[idx].audioRefs.removeAll()

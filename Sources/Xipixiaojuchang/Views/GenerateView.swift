@@ -4616,6 +4616,8 @@ struct MaterialSection: View {
                     }
                     .buttonStyle(OutlineButtonStyle())
                     .controlSize(.small)
+                    .help("按头行里的名字把这一段该用的素材图挂上")
+                    .accessibilityIdentifier("material-auto-match")
                 }
                 Spacer()
                 Button { onClear?() } label: {
@@ -5365,8 +5367,6 @@ struct EditPromptSheet: View {
     var inline = false
     /// 嵌着时这一栏能给多宽（二级页面按栏宽算好传进来）：窄了参数那一行换成两行
     var availableWidth: CGFloat? = nil
-    /// 嵌着时「自动匹配」按钮放在二级页面右栏「添加素材」左边（2026-10-15 用户）：那边每点一下这个数 +1，这里照常走自动匹配
-    var autoMatchTrigger = 0
     /// 参数 +「提交生成」排成一行要多宽（含左右边距；模型名用完整宽度，不截断）
     static let inlineRowMinWidth: CGFloat = 550   // 实测整栏最窄 546
     @State private var editPrompt: String
@@ -5383,10 +5383,8 @@ struct EditPromptSheet: View {
 
     // ⚠️ 自定义 init 必须显式接收并赋值 `onClose`（成员初始化器被它取代了）
     init(shot: ShotDraft, onClose: @escaping () -> Void,
-         onSave: ((String) -> Bool)? = nil, showsMaterialSection: Bool = true, inline: Bool = false, availableWidth: CGFloat? = nil,
-         autoMatchTrigger: Int = 0) {
+         onSave: ((String) -> Bool)? = nil, showsMaterialSection: Bool = true, inline: Bool = false, availableWidth: CGFloat? = nil) {
         self.availableWidth = availableWidth
-        self.autoMatchTrigger = autoMatchTrigger
         self.shot = shot
         self.onClose = onClose
         self.onSave = onSave
@@ -5446,7 +5444,6 @@ struct EditPromptSheet: View {
         .onChange(of: editPrompt) { _, _ in
             if inline, !promptFocused { saveInline() }
         }
-        .onChange(of: autoMatchTrigger) { _, _ in autoMatch() }
         // 自动匹配：有还没入库的图 → 先问一句（和工作台「匹配」「应用素材」一样，视频生成要用素材库里的图）
         .alert("有 \(autoMatchPendingLibrary) 张图还没入库", isPresented: Binding(get: { autoMatchPendingLibrary > 0 }, set: { if !$0 { autoMatchPendingLibrary = 0 } })) {
             Button("入库并匹配") { runEpisodeAutoMatch() }
@@ -5473,8 +5470,6 @@ struct EditPromptSheet: View {
                 imageRefs: liveShot.imageRefs,
                 videoRefs: liveShot.videoRefs,
                 audioRefs: liveShot.audioRefs,
-                // 嵌在二级页面时「自动匹配」挪到右栏「添加素材」左边
-                showsAutoMatch: !inline,
                 // 「添加」打开左侧素材库抽屉（浮在本弹窗之上，可拖可双击），并把"加到哪儿"带过去
                 onAdd: {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -5488,7 +5483,7 @@ struct EditPromptSheet: View {
                 onAutoMatch: autoMatch,
                 onClear: {
                     app.clearShotMaterials(shot.id)
-                    editPrompt = AppModel.stripAllTokens(editPrompt)
+                    editPrompt = AppModel.strippingMaterials(editPrompt)
                 },
                 onCycleRole: { refID in app.cycleImageRole(shotID: shot.id, refID: refID) },
                 onDrop: { app.addShotMaterial(shotID: shot.id, libraryItemID: $0) }
@@ -5571,7 +5566,7 @@ struct EditPromptSheet: View {
         }
     }
 
-    /// 素材区「自动匹配」（嵌着时由二级页面右栏的按钮触发，见 `autoMatchTrigger`）
+    /// 素材区「自动匹配」。段落详情里也在左边这一行（2026-10-27 用户：审完提示词就匹配，原来在右栏「本段预览」里、每段都要切页）
     private func autoMatch() {
         // 弹窗编辑的是本地副本：先把编辑器内容写回数据层，再匹配，最后把结果读回编辑器
         //（否则匹配改的是数据层旧内容，编辑器看不到、保存时又被覆盖回去）

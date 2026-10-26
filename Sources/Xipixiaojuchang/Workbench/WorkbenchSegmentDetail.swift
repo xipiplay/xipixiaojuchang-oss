@@ -179,8 +179,6 @@ private struct DetailBody: View {
     @State private var rightTab: RightTab?
     /// 右上「历史版本」面板开着没有
     @State private var showVersions = false
-    /// 右栏「自动匹配」每点一下 +1，左栏的提示词编辑区接到后照常走自动匹配（逻辑要用那边正在编辑的提示词）
-    @State private var autoMatchTick = 0
     /// 点了某个素材行的删除、等确认的名字
     @State private var removalName: String?
     /// 「应用素材」前还没入库的张数（等确认；0 = 没有在等）
@@ -424,7 +422,7 @@ private struct DetailBody: View {
     @ViewBuilder
     private func promptTab(width: CGFloat) -> some View {
         if let shot {
-            EditPromptSheet(shot: shot, onClose: {}, inline: true, availableWidth: width, autoMatchTrigger: autoMatchTick)
+            EditPromptSheet(shot: shot, onClose: {}, inline: true, availableWidth: width)
                 .id(shot.id)
                 .accessibilityIdentifier("workbench-segment-prompt")
         } else {
@@ -612,20 +610,14 @@ private struct DetailBody: View {
         return "当前预览：第 \(number) 版"
     }
 
-    /// 「本段素材 · N」+ 自动匹配 + 添加（自动匹配原来在左栏素材区，2026-10-15 用户挪到「添加素材」左边；不再按场景 / 角色 / 道具切换，全部排在一起，2026-10-15 用户）
+    /// 「本段素材 · N」+ 添加（不再按场景 / 角色 / 道具切换，全部排在一起，2026-10-15 用户）。
+    /// 「自动匹配」2026-10-15 挪来过这里，2026-10-27 用户又挪回左栏素材那一行：审完提示词就匹配，这里在「本段预览」页里、每段都要切页
     private func materialsHeader(_ rows: [DetailRowInfo]) -> some View {
         HStack(spacing: 14) {
             Text(shot == nil ? "本段素材（预估）" : (rows.isEmpty ? "本段素材" : "本段素材 · \(rows.count)"))
                 .font(.system(size: 13, weight: .semibold))
             Spacer(minLength: 4)
             if let shot {
-                Button { autoMatchTick += 1 } label: {
-                    Label("自动匹配", systemImage: "wand.and.stars")
-                }
-                .buttonStyle(OutlineButtonStyle())
-                .controlSize(.small)
-                .help("按头行里的名字把这一段该用的素材图挂上")
-                .accessibilityIdentifier("workbench-auto-match")
                 // 加、删都是直接改这一段分镜提示词的头行，所以提取、状态、应用素材读到的永远是同一份名字
                 AddMaterialButton(suggestions: { WorkbenchVersions.suggestions(cards: app.currentImageItems) },
                                   taken: Set(rows.map(\.name.name))) { kind, name in

@@ -139,4 +139,27 @@ final class ShotVoiceSyncAppTests: XCTestCase {
         XCTAssertTrue(current().audioRefs.isEmpty, "删了角色图：音色也走")
         XCTAssertFalse(current().prompt.contains("【音色】"))
     }
+
+    /// 「清空素材」：图、音频和【音色】那一行一起走（2026-10-27 用户：清空后文本音色还留着）
+    func testClearingMaterialsAlsoRemovesTheVoiceLine() {
+        var card = ImageGenItem(projectKey: key, type: .character, name: "周承山", prompt: "这个人是：\"周承山\"")
+        card.voiceMode = .text
+        card.voiceText = "低沉沙哑"
+        var image = Lib(kind: .image, localPath: nil, fileName: "zhou.png", name: "角色-周承山", projectKey: key)
+        image.imageGenItemID = card.id
+        image.source = .imageGenerated
+        app.imageItems.append(card)
+        app.library.append(image)
+        let shot = ShotDraft(projectKey: key, prompt: "[客厅][周承山][ ]\n周承山说话")
+        app.shots.append(shot)
+        app.autoMatchMaterials(shot.id, candidates: [image], detectsDuration: false)
+        func current() -> ShotDraft { app.shots.first { $0.id == shot.id }! }
+        XCTAssertEqual(current().prompt, "[客厅][图1周承山][ ]\n【音色】周承山的音色：低沉沙哑\n周承山说话")
+
+        app.clearShotMaterials(shot.id)
+        XCTAssertTrue(current().imageRefs.isEmpty)
+        XCTAssertEqual(current().prompt, "[客厅][周承山][ ]\n周承山说话")
+        XCTAssertEqual(AppModel.strippingMaterials("[图1客厅][ ][ ]\n【音色】音频1是周承山的音色\n正文"), "[客厅][ ][ ]\n正文",
+                       "编辑框里同一套：音频音色那行也去掉，不剩半截")
+    }
 }
