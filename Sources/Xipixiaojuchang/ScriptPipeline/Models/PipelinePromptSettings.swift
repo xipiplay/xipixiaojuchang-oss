@@ -13,9 +13,11 @@ struct PipelinePromptSettings: Codable, Equatable, Sendable {
     var storyboard = ""
     /// 分段命名（2026-10-11）：给每个 30 秒段写【场景】【角色】【道具】【本段在场】四行名字
     var naming = ""
+    /// 提取音色（2026-10-26）：给角色卡写文本音色描述
+    var voice = ""
 
     init(split: String = "", segments: String = "", role: String = "", sceneProp: String = "", scene: String = "", prop: String = "",
-         storyboard: String = "", naming: String = "") {
+         storyboard: String = "", naming: String = "", voice: String = "") {
         self.split = split
         self.segments = segments
         self.role = role
@@ -24,6 +26,7 @@ struct PipelinePromptSettings: Codable, Equatable, Sendable {
         self.prop = prop
         self.storyboard = storyboard
         self.naming = naming
+        self.voice = voice
     }
 
     /// 自己写解码：合成的解码器遇到缺的键会整份读失败，用户之前存的提示词就全没了（`load()` 读失败回默认）。
@@ -38,6 +41,7 @@ struct PipelinePromptSettings: Codable, Equatable, Sendable {
         prop = try c.decodeIfPresent(String.self, forKey: .prop) ?? ""
         storyboard = try c.decodeIfPresent(String.self, forKey: .storyboard) ?? ""
         naming = try c.decodeIfPresent(String.self, forKey: .naming) ?? ""
+        voice = try c.decodeIfPresent(String.self, forKey: .voice) ?? ""
     }
 }
 

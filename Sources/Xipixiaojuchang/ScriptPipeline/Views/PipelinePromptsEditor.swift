@@ -33,9 +33,9 @@ struct PipelinePromptsEditor: View {
         _selected = State(initialValue: Item.allCases.first { $0.isModified(in: draft.wrappedValue) } ?? .split)
     }
 
-    /// 七条提示词（顺序就是流程顺序）
+    /// 八条提示词（顺序就是流程顺序；提取音色在生图页用，放最后）
     enum Item: String, CaseIterable, Identifiable {
-        case split, segments, naming, role, scene, prop, storyboard
+        case split, segments, naming, role, scene, prop, storyboard, voice
         var id: String { rawValue }
 
         var title: String {
@@ -47,6 +47,7 @@ struct PipelinePromptsEditor: View {
             case .scene: "提取场景"
             case .prop: "提取道具"
             case .storyboard: "推理分镜"
+            case .voice: "提取音色"
             }
         }
 
@@ -60,6 +61,7 @@ struct PipelinePromptsEditor: View {
             case .scene: "场景提取：名字取自分镜头行，去用到它的分镜里找描述，在生图页建卡片（先推理分镜）。"
             case .prop: "道具提取：名字取自分镜头行，去原文里找描述，在生图页建卡片（先推理分镜）。"
             case .storyboard: "推理分镜：读一集的时长分割，每个 30 秒段推理成一条分镜提示词，建成分镜卡。"
+            case .voice: "提取音色：生图页「角色」里点「提取音色」时用。读勾选角色的形象和出场原文，给每张卡写文本音色描述（只填空的，勾上「已有」才覆盖）。"
             }
         }
 
@@ -72,6 +74,7 @@ struct PipelinePromptsEditor: View {
             case .scene: PipelinePromptStore.sceneDefault
             case .prop: PipelinePromptStore.propDefault
             case .storyboard: PipelinePromptStore.shotsDefault
+            case .voice: PipelinePromptStore.voiceDefault
             }
         }
 
@@ -84,6 +87,7 @@ struct PipelinePromptsEditor: View {
             case .scene: \.scene
             case .prop: \.prop
             case .storyboard: \.storyboard
+            case .voice: \.voice
             }
         }
 
@@ -101,7 +105,8 @@ struct PipelinePromptsEditor: View {
                                scene: PipelinePromptStore.sceneDefault,
                                prop: PipelinePromptStore.propDefault,
                                storyboard: PipelinePromptStore.shotsDefault,
-                               naming: PipelinePromptStore.namingDefault)
+                               naming: PipelinePromptStore.namingDefault,
+                               voice: PipelinePromptStore.voiceDefault)
     }
 
     var body: some View {

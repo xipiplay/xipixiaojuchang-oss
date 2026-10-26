@@ -8,6 +8,7 @@ import Foundation
 /// 这些写在头行下面单独一行「【音色】…」，每次整行重写（幂等；用户删了这行字，下次匹配补回来，同「图N」的规矩）。
 /// 不再需要的音色音频（换了版本 / 解绑了）从素材区摘掉，提示词里的「音频N」跟着重新编号。
 /// 挂不上的（渠道不收参考音频、分镜关了「生成音频」、音频已经 3 段）不挂，记下原因给段落详情显示，不悄悄丢。
+/// 关了「生成音频」的分镜连文本音色也不写（成片没有声音，写了只会让模型误会；2026-10-26 用户定）。
 @MainActor
 enum ShotVoiceSync {
     static let tag = "【音色】"
@@ -36,8 +37,9 @@ enum ShotVoiceSync {
     }
 
     /// 算出同步后的提示词和音频素材。`voiceAudioIDs`：本项目所有卡绑着的音色音频（判断哪些已挂的音频是「音色」，不需要了要摘掉）
+    /// `generateAudio`：这一段生不生成音频；关了不写文本音色
     static func plan(prompt original: String, audioRefs refs: [MaterialRef], voices: [Voice],
-                     voiceAudioIDs: Set<UUID>, blocker: String?) -> Plan {
+                     voiceAudioIDs: Set<UUID>, blocker: String?, generateAudio: Bool = true) -> Plan {
         var prompt = removingTagLine(original)
         var audioRefs = refs
         var skipped: [String] = []
@@ -59,6 +61,10 @@ enum ShotVoiceSync {
         for voice in voices {
             switch voice.resolved {
             case .text(let text):
+                guard generateAudio else {
+                    skipped.append("\(voice.name)：这一段关了「生成音频」")
+                    continue
+                }
                 parts.append("\(voice.name)的音色：\(text.components(separatedBy: .newlines).joined(separator: " "))")
             case .audio(let item):
                 if audioRefs.firstIndex(where: { $0.libraryItemID == item.id }) == nil {
@@ -141,7 +147,8 @@ extension AppModel {
         let blocker = ShotVoiceSync.audioBlocker(generateAudio: shot.generateAudio,
                                                  channelFormat: channel(forModel: shot.model)?.0.apiFormat)
         let plan = ShotVoiceSync.plan(prompt: shot.prompt, audioRefs: shot.audioRefs, voices: voices,
-                                      voiceAudioIDs: context.voiceAudioIDs, blocker: blocker)
+                                      voiceAudioIDs: context.voiceAudioIDs, blocker: blocker,
+                                      generateAudio: shot.generateAudio)
         let skips = plan.skipped.isEmpty ? nil : plan.skipped
         if voiceSyncSkips[shotID] != skips { voiceSyncSkips[shotID] = skips }
         guard plan.prompt != shot.prompt || plan.audioRefs != shot.audioRefs else { return false }

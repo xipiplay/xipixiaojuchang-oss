@@ -599,7 +599,7 @@ struct PipelinePage: View {
         switch kind {
         case .split, .naming: return autoPane(for: episode) == .original ? nil : .split      // 命名的结果（头行）就写在分割的文字里
         case .infer: return autoPane(for: episode) == .segments ? .segments : nil
-        case .extract: return nil
+        case .extract, .voice: return nil
         }
     }
 

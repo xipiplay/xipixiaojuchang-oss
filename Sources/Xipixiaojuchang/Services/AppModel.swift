@@ -2387,19 +2387,46 @@ final class AppModel {
 
     /// 卡上的音色改了：挂着这张卡的图的分镜跟着更新（音频素材 +「【音色】」那行）
     func syncVoices(ofCard cardID: UUID) {
-        guard let card = imageItems.first(where: { $0.id == cardID }) else { return }
-        let images = Set(library.filter { $0.imageGenItemID == cardID }.map(\.id))
-        guard !images.isEmpty else { return }
-        // 查表整理一次、最后存一次盘（主角用到上百段，原来每段各整理一遍、各存一次）
-        let context = VoiceSyncContext(app: self, projectKey: card.projectKey)
-        var changed = false
-        for shot in shots where shot.imageRefs.contains(where: { images.contains($0.libraryItemID) }) {
-            if syncShotVoices(shot.id, context: context) { changed = true }
+        syncVoices(ofCards: [cardID])
+    }
+
+    /// 几张卡一起：查表整理一次、最后存一次盘（主角用到上百段，原来每段各整理一遍、各存一次；批量提取音色一次几十张卡）。
+    /// 返回改了几段分镜
+    @discardableResult
+    func syncVoices(ofCards cardIDs: Set<UUID>) -> Int {
+        let cards = imageItems.filter { cardIDs.contains($0.id) }
+        var changedCount = 0
+        for projectKey in Set(cards.map(\.projectKey)) {
+            let images = Set(library.filter { $0.imageGenItemID.map(cardIDs.contains) == true }.map(\.id))
+            guard !images.isEmpty else { continue }
+            let context = VoiceSyncContext(app: self, projectKey: projectKey)
+            var changed = 0
+            for shot in shots where shot.projectKey == projectKey && shot.imageRefs.contains(where: { images.contains($0.libraryItemID) }) {
+                if syncShotVoices(shot.id, context: context) { changed += 1 }
+            }
+            if changed > 0 {
+                touchProject(projectKey)
+                persistShots()
+            }
+            changedCount += changed
         }
-        if changed {
-            touchProject(card.projectKey)
-            persistShots()
+        return changedCount
+    }
+
+    /// 批量提取音色的结果写回卡上的文本音色（不动音频、不改选的是文本还是音频），再统一同步一次分镜。
+    /// 和原来一样的不算；返回实际写了几张卡、改了几段分镜
+    func applyExtractedVoices(_ voices: [UUID: String]) -> (cards: Int, shots: Int) {
+        var written = Set<UUID>()
+        for (id, text) in voices {
+            guard let idx = imageItems.firstIndex(where: { $0.id == id }) else { continue }
+            let text = CardVoice.normalizedText(text)
+            guard text != nil, imageItems[idx].voiceText != text else { continue }
+            imageItems[idx].voiceText = text
+            written.insert(id)
         }
+        guard !written.isEmpty else { return (0, 0) }
+        persistImageItems()
+        return (written.count, syncVoices(ofCards: written))
     }
 
     /// 改角色卡的音色文字描述（空 = 不要）。没变就什么都不写

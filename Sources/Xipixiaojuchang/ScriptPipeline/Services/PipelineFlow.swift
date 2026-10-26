@@ -20,7 +20,7 @@ final class PipelineFlow {
     /// 批量操作（批量分割 / 提取素材）在一个项目里的进度，显示在软件右上角（项目名那一行的右边）：
     /// 跑的时候「批量分割 12/60」，跑完分割显示「成功几集、失败几集」，提取显示「新建几张卡片」。
     struct BatchState: Equatable {
-        enum Kind: Equatable { case split, extract, infer, naming }
+        enum Kind: Equatable { case split, extract, infer, naming, voice }
         /// `label`：失败的是谁（「第 2 集」/「场景」）；`order`：排序用（集号 / 角色场景道具的顺序）
         struct Failure: Equatable { var order: Int; var label: String; var message: String }
         var kind: Kind
@@ -30,6 +30,8 @@ final class PipelineFlow {
         var failures: [Failure] = []
         /// 提取素材 / 推理分镜：已经建出来（或重推时更新）的卡片数
         var created = 0
+        /// 提取音色：跟着更新了【音色】行的分镜段数
+        var shotsUpdated = 0
         /// 推理分镜是一集一集串行跑的，停在某一集（失败 / 停止）之后没轮到的集数
         var skipped = 0
         /// 提取素材：不算失败、但值得让人知道的提醒（卡名和分镜头行的名字对不上、名单里有名字没提取出来…）
@@ -858,5 +860,66 @@ extension View {
     func pipelineActivityGlow(_ active: Bool) -> some View {
         overlay(RoundedRectangle(cornerRadius: Theme.Radius.control).strokeBorder(active ? Theme.accent : .clear, lineWidth: 1.5)
             .allowsHitTesting(false))
+    }
+}
+
+// MARK: 提取音色（2026-10-26）
+// 放在这个文件里：要改 `batches`（private(set)）、用 `start` / `mapConcurrently`
+
+extension PipelineFlow {
+    /// 生图页「提取音色」：给勾选的角色卡写文本音色（见 `VoiceExtraction`）。和提取素材同一张服务商卡片，选的是外部智能体就走接力。
+    /// 右上角显示「提取音色：填了 N 张卡，更新 M 段分镜」；别的批量（分割 / 推理分镜 / 提取素材）在跑时不开。
+    /// `note`：这一次手写的补充要求。`prompt` / `chat` 给测试用
+    func batchExtractVoices(app: AppModel, project: String, cardIDs: [UUID], note: String = "",
+                            prompt: String? = nil, chat: SimplePipeline.Chat? = nil) {
+        let slot = "extract-voice"
+        guard jobs[Self.slotKey(project, slot)]?.active != true else { return }
+        if let running = batches[project], !running.finished { return }
+        let wanted = Set(cardIDs)
+        let cards = app.imageItems.filter { $0.projectKey == project && wanted.contains($0.id) }
+        guard !cards.isEmpty else { return }
+        let archive = app.pipelineArchive(for: project)
+        let episodes = archive?.episodes ?? []
+        let appearances: [String: [Int]]
+        if let archive, !episodes.isEmpty {
+            let entries = Self.extractionEntries(app: app, project: project, archive: archive, kind: .role,
+                                                 episodeIndices: Array(episodes.indices))
+            appearances = Dictionary(entries.map { ($0.name, $0.episodes) }, uniquingKeysWith: { first, _ in first })
+        } else {
+            appearances = [:]
+        }
+        let targets = VoiceExtraction.targets(cards: cards, appearances: appearances)
+        let texts: [(episode: Int, text: String)] = episodes.isEmpty
+            ? [(1, archive?.wholeScript ?? "")]
+            : episodes.enumerated().map { ($0.offset + 1, $0.element.text) }
+        let batchesOfTargets = stride(from: 0, to: targets.count, by: VoiceExtraction.namesPerRequest)
+            .map { Array(targets[$0..<min($0 + VoiceExtraction.namesPerRequest, targets.count)]) }
+        let era = archive?.eraBackground ?? ""
+        let messages = batchesOfTargets.map { batch in
+            RerunNote.prefixed(EraBackground.prefixed(VoiceExtraction.message(batch: batch, source: VoiceExtraction.source(episodes: texts, for: batch)),
+                                                      era: era), note: note)
+        }
+        let promptText = prompt ?? PipelinePromptStore.voicePrompt
+        let config = PipelineAISettingsStore.load().config
+        let request = chat ?? SimplePipeline.chat(config: config, timeout: 900)
+        let limit = min(config.requestConcurrency, Self.extractionConcurrency)
+        batches[project] = BatchState(kind: .voice, title: "提取音色", total: 1)
+        start(project: project, episode: nil, stage: .assets, slot: slot, title: "提取音色",
+              onFinish: { [weak self] message in
+                  self?.recordBatch(project: project, order: 0, label: "音色", failure: message)
+              }) {
+            let replies = try await Self.mapConcurrently(messages, limit: limit) { message in
+                let raw = try await request(PipelinePromptStore.apiReady(promptText), message)
+                return (raw, [])
+            }
+            try Task.checkCancellation()
+            let parsed = replies.flatMap { VoiceExtraction.parse($0.raw) }
+            let matched = VoiceExtraction.match(parsed, to: targets)
+            let result = app.applyExtractedVoices(matched.voices)
+            self.batches[project]?.created += result.cards
+            self.batches[project]?.shotsUpdated += result.shots
+            self.batches[project]?.notes += matched.notes
+            AppLog.write("voice", "提取音色：名单 \(targets.count) 人，写了 \(result.cards) 张卡，更新 \(result.shots) 段分镜")
+        }
     }
 }

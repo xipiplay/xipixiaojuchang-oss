@@ -70,6 +70,10 @@ struct BatchStatusLabel: View {
                 parts.append(("失败：" + state.failures.sorted { $0.order < $1.order }.map(\.label).joined(separator: "、"), true))
             }
             if !state.notes.isEmpty { parts.append(("\(state.notes.count) 条提醒", false)) }
+        case .voice:
+            parts.append(("提取音色：填了 \(state.created) 张卡，更新 \(state.shotsUpdated) 段分镜", false))
+            if !state.failures.isEmpty { parts.append(("失败", true)) }
+            if !state.notes.isEmpty { parts.append(("\(state.notes.count) 条提醒", false)) }
         }
         return parts
     }

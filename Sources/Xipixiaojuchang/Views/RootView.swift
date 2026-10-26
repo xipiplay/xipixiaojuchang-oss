@@ -734,6 +734,8 @@ struct RootView: View {
     @State private var batchSaveIssueMessage = ""
     /// 跳过已入库之后剩下要存的卡（空 = 这次没有这个按钮）
     @State private var batchSaveSkippingIDs: [UUID] = []
+    /// 生图页工具条「提取音色」的选择框
+    @State private var showVoiceExtract = false
 
     /// **共享底栏**（2026-09-27 用户定：四个页面共用一个底栏）——
     /// **没选中** = 按模式换按钮；**选中** = 视频、生图各四个按钮（含取消）。
@@ -754,6 +756,17 @@ struct RootView: View {
                 }
                 BarIconButton(icon: "plus", help: "新增图片") {
                     app.addImageItem()
+                }
+                // 批量给角色卡写文本音色（2026-10-26）
+                if let key = app.currentProjectKey {
+                    BarIconButton(icon: "waveform", help: "提取音色（给角色卡写文本音色描述）") {
+                        DropdownPanel.shared.dismiss()
+                        showVoiceExtract = true
+                    }
+                    .dropdownPopover(isPresented: $showVoiceExtract) {
+                        VoiceExtractPanel(app: app, project: key) { DropdownPanel.shared.dismiss() }
+                    }
+                    .accessibilityIdentifier("voice-extract")
                 }
                 ToolbarGenerationParams()      // 右栏正在看的那张图片的生成参数 + 提交生成（2026-10-08 从右栏底部搬来）
             }

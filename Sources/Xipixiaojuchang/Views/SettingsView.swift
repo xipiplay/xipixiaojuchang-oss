@@ -100,7 +100,8 @@ struct SettingsView: View {
             scene: PipelinePromptStore.effective(overrides.scene, fallback: PipelinePromptStore.sceneDefault),
             prop: PipelinePromptStore.effective(overrides.prop, fallback: PipelinePromptStore.propDefault),
             storyboard: PipelinePromptStore.effective(overrides.storyboard, fallback: PipelinePromptStore.shotsDefault),
-            naming: PipelinePromptStore.effective(overrides.naming, fallback: PipelinePromptStore.namingDefault)
+            naming: PipelinePromptStore.effective(overrides.naming, fallback: PipelinePromptStore.namingDefault),
+            voice: PipelinePromptStore.effective(overrides.voice, fallback: PipelinePromptStore.voiceDefault)
         )
         promptsSaved = promptsDraft
     }
@@ -119,7 +120,8 @@ struct SettingsView: View {
             scene: promptsDraft.scene == PipelinePromptStore.sceneDefault ? "" : promptsDraft.scene,
             prop: promptsDraft.prop == PipelinePromptStore.propDefault ? "" : promptsDraft.prop,
             storyboard: promptsDraft.storyboard == PipelinePromptStore.shotsDefault ? "" : promptsDraft.storyboard,
-            naming: promptsDraft.naming == PipelinePromptStore.namingDefault ? "" : promptsDraft.naming
+            naming: promptsDraft.naming == PipelinePromptStore.namingDefault ? "" : promptsDraft.naming,
+            voice: promptsDraft.voice == PipelinePromptStore.voiceDefault ? "" : promptsDraft.voice
         ))
         promptsSaved = promptsDraft
     }

@@ -121,17 +121,18 @@ final class PromptTextEditorTests: XCTestCase {
     }
 }
 
-/// 左边那七条：顺序是流程顺序，「改过」= 和内置默认不一样
+/// 左边那八条：顺序是流程顺序（提取音色在生图页用，放最后），「改过」= 和内置默认不一样
 final class PipelinePromptsEditorItemTests: XCTestCase {
     func testItemsFollowTheFlowOrderAndMapToTheRightFields() {
         typealias Item = PipelinePromptsEditor.Item
-        XCTAssertEqual(Item.allCases.map(\.title), ["分集", "分割（时长）", "分段命名", "提取角色", "提取场景", "提取道具", "推理分镜"])
+        XCTAssertEqual(Item.allCases.map(\.title), ["分集", "分割（时长）", "分段命名", "提取角色", "提取场景", "提取道具", "推理分镜", "提取音色"])
         var settings = PipelinePromptSettings()
         for (i, item) in Item.allCases.enumerated() { settings[keyPath: item.keyPath] = "内容\(i)" }
-        XCTAssertEqual([settings.split, settings.segments, settings.naming, settings.role, settings.scene, settings.prop, settings.storyboard],
-                       (0..<7).map { "内容\($0)" })
+        XCTAssertEqual([settings.split, settings.segments, settings.naming, settings.role, settings.scene, settings.prop, settings.storyboard, settings.voice],
+                       (0..<8).map { "内容\($0)" })
         XCTAssertEqual(Item.scene.fallback, PipelinePromptStore.sceneDefault)
         XCTAssertEqual(Item.storyboard.fallback, PipelinePromptStore.shotsDefault)
+        XCTAssertEqual(Item.voice.fallback, PipelinePromptStore.voiceDefault)
     }
 
     func testModifiedMeansDifferentFromTheBuiltInDefaultIgnoringOuterWhitespace() {

@@ -182,6 +182,7 @@ extension AgentBridge {
         case .extract: "extract"
         case .infer: "infer"
         case .naming: "name"
+        case .voice: "voice"
         }
     }
 }
