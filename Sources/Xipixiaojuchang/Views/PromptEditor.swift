@@ -8,6 +8,8 @@ struct SlotItem: Identifiable {
     let name: String        // 文件名或 URL
     let thumbnailURL: URL?  // 本地图片文件 URL（用于缩略图）
     let remoteThumbnailURL: URL?  // 远程图片直链（异步加载缩略图）
+    /// 这张图是绑了音色的角色卡（2026-10-26）：缩略图角上画个小喇叭
+    var hasVoice: Bool = false
 }
 
 extension SlotItem {
@@ -16,13 +18,16 @@ extension SlotItem {
     @MainActor
     static func list(for shot: ShotDraft, in app: AppModel) -> [SlotItem] {
         var items: [SlotItem] = []
+        let lookup = { (id: UUID) in app.libraryItem(id) }
         for (i, ref) in shot.imageRefs.enumerated() {
             let item = app.libraryItem(ref.libraryItemID)
+            let card = item?.imageGenItemID.flatMap { id in app.imageItems.first { $0.id == id } }
             items.append(SlotItem(
                 token: "图\(i + 1)",
                 name: item?.matchName ?? item?.fileName ?? "图\(i + 1)",
                 thumbnailURL: item?.existingLocalImageURL,
-                remoteThumbnailURL: item?.remoteURL.flatMap { URL(string: $0) }
+                remoteThumbnailURL: item?.remoteURL.flatMap { URL(string: $0) },
+                hasVoice: card.flatMap { CardVoice.resolve($0, library: lookup) } != nil
             ))
         }
         items += mediaSlots(for: shot, in: app)
@@ -60,7 +65,7 @@ final class SlotAttachment: NSTextAttachment {
     /// 圆角（pt）。18 高的块上取 5（约 28%）—— 原来 20×20 时是 7（35%），按比例收了一点 ✓
     private static let cornerRadius: CGFloat = 6
 
-    init(token: String, image: NSImage) {
+    init(token: String, image: NSImage, voiceBadge: Bool = false) {
         self.token = token
         // ⚠️ 预览用**原图**：悬停放大时该看完整画面，不该是裁过、圆角过的方块 ✓
         self.previewImage = image
@@ -78,8 +83,27 @@ final class SlotAttachment: NSTextAttachment {
             self.bounds = NSRect(x: 0, y: -5, width: size.width, height: size.height)
         } else {
             let square = Self.squareRounded(image)
-            self.image = square
+            self.image = voiceBadge ? Self.withVoiceBadge(square) : square
             self.bounds = NSRect(x: 0, y: -5, width: Self.width, height: Self.height)
+        }
+    }
+
+    /// 右下角画个小喇叭（绑了音色的角色图，2026-10-26）
+    private static func withVoiceBadge(_ image: NSImage) -> NSImage {
+        NSImage(size: image.size, flipped: false) { rect in
+            image.draw(in: rect)
+            let d: CGFloat = 11
+            let badge = NSRect(x: rect.maxX - d, y: rect.minY, width: d, height: d)
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            NSBezierPath(ovalIn: badge).fill()
+            let config = NSImage.SymbolConfiguration(pointSize: 6.5, weight: .bold)
+                .applying(.init(paletteColors: [.white]))
+            if let symbol = NSImage(systemSymbolName: "speaker.wave.2.fill", accessibilityDescription: nil)?
+                .withSymbolConfiguration(config) {
+                let s = symbol.size
+                symbol.draw(in: NSRect(x: badge.midX - s.width / 2, y: badge.midY - s.height / 2, width: s.width, height: s.height))
+            }
+            return true
         }
     }
 
@@ -545,7 +569,7 @@ struct PromptEditor: NSViewRepresentable {
             while let range = full.string.range(of: pattern, options: .regularExpression) {
                 // 每处各用一个新的附件实例（同一个 NSTextAttachment 实例塞进多处，悬停定位 / 删除时会互相串）
                 full.replaceCharacters(in: NSRange(range, in: full.string),
-                                       with: PromptText.attachmentString(SlotAttachment(token: slot.token, image: image)))
+                                       with: PromptText.attachmentString(SlotAttachment(token: slot.token, image: image, voiceBadge: slot.hasVoice)))
             }
         }
         return full
@@ -658,8 +682,9 @@ struct PromptEditor: NSViewRepresentable {
             guard let storage = textView?.textStorage else { return }
             let pattern = NSRegularExpression.escapedPattern(for: token) + "(?![0-9])"
             while let range = storage.string.range(of: pattern, options: .regularExpression) {
+                let badge = slots.first { $0.token == token }?.hasVoice ?? false
                 storage.replaceCharacters(in: NSRange(range, in: storage.string),
-                                          with: PromptText.attachmentString(SlotAttachment(token: token, image: image)))
+                                          with: PromptText.attachmentString(SlotAttachment(token: token, image: image, voiceBadge: badge)))
             }
             attachedTokens.insert(token)
         }
@@ -821,10 +846,10 @@ struct PromptEditor: NSViewRepresentable {
             ]
             let attr = NSMutableAttributedString()
             if let url = item.thumbnailURL, let image = LocalImageCache.image(at: url) {
-                attr.append(PromptText.attachmentString(SlotAttachment(token: item.token, image: image)))
+                attr.append(PromptText.attachmentString(SlotAttachment(token: item.token, image: image, voiceBadge: item.hasVoice)))
             } else if let remoteURL = item.remoteThumbnailURL,
                       let image = cachedRemoteThumbnail(for: remoteURL) {
-                attr.append(PromptText.attachmentString(SlotAttachment(token: item.token, image: image)))
+                attr.append(PromptText.attachmentString(SlotAttachment(token: item.token, image: image, voiceBadge: item.hasVoice)))
             } else {
                 attr.append(NSAttributedString(string: item.token, attributes: font))
             }

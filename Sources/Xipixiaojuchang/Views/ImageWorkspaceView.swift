@@ -71,9 +71,21 @@ private struct ImageGenPanel: View {
         return local.x >= 0 && local.y >= 0 && local.x <= frame.width && local.y <= frame.height
     }
 
+    /// 单击缩略图 / 卡片 = 打开编辑弹窗（2026-10-26 用户：去掉右边详情，信息都在弹窗里）。
+    /// 照样记成「正在看的条目」：底栏的生成参数跟着它
+    private func openEditor(_ id: UUID) {
+        app.inspectorKind = .image
+        app.inspectedImageItemID = id
+        ImagePreviewOnTap.shared.cancelPending()
+        ImagePreviewOnTap.shared.markEditorOpened()
+        app.activeModal = .editImagePrompt(itemID: id)
+    }
+
     private func installDblThumbMonitor() {
         guard dblThumbMonitor == nil else { return }
         dblThumbMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            // 单击已经开了弹窗（2026-10-26）：双击的第二下别落进刚弹出的弹窗里
+            if event.clickCount >= 2, ImagePreviewOnTap.shared.justOpenedEditor { return nil }
             guard event.clickCount == 2, let w = event.window, !(w is NSPanel),
                                     app.activeModal == nil, !app.showLibraryDrawer, !app.showTaskDrawer, !app.showHistoryDrawer,
                   app.isProductionWorkspaceVisible,
@@ -84,15 +96,10 @@ private struct ImageGenPanel: View {
             if let id = imageThumbFrames.hit(CGRect(x: dblLocal(dblThumbFrame, w, event.locationInWindow).x,
                                                     y: dblLocal(dblThumbFrame, w, event.locationInWindow).y,
                                                     width: 1, height: 1)).first {
-                // 🆕 2026-10-03（用户定）：**双击 = 看大图**（编辑弹窗改从详情提示词进；选择模式下双击不动作）
-                AppLog.write("dblClick", "生图缩略图双击 → 看大图 id=\(id)")
-                if app.selectedImageItemIDs.isEmpty,
-                   let target = app.imageItems.first(where: { $0.id == id }),
-                   let r = target.results.first(where: { $0.id == target.selectedResultID }) ?? target.latestResult,
-                   r.localPath != nil {
-                    app.previewingImageResultID = r.id
-                    app.previewingImageItemID = target.id
-                }
+                // 2026-10-26：双击 = 单击（打开编辑弹窗）。原来双击是看大图，第一下单击还没来得及开弹窗时第二下就开了大图（用户录屏）；
+                // 看大图改在弹窗里点图。选择模式下双击不动作
+                AppLog.write("dblClick", "生图缩略图双击 → 编辑弹窗 id=\(id)")
+                if app.selectedImageItemIDs.isEmpty { openEditor(id) }
                 return nil
             }
             return event
@@ -103,6 +110,7 @@ private struct ImageGenPanel: View {
     private func installDblCardMonitor() {
         guard dblCardMonitor == nil else { return }
         dblCardMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            if event.clickCount >= 2, ImagePreviewOnTap.shared.justOpenedEditor { return nil }
             guard event.clickCount == 2, let w = event.window, !(w is NSPanel),
                                     app.activeModal == nil, !app.showLibraryDrawer, !app.showTaskDrawer, !app.showHistoryDrawer,
                   app.isProductionWorkspaceVisible,
@@ -114,8 +122,7 @@ private struct ImageGenPanel: View {
                                                           y: dblLocal(dblCardFrame, w, event.locationInWindow).y,
                                                           width: 1, height: 1)).first {
                 AppLog.write("dblClick", "生图卡片双击 → 编辑弹窗 id=\(id)")
-                ImagePreviewOnTap.shared.cancelPending()   // 🆕 取消"双击第一下"触发的看大图
-                app.activeModal = .editImagePrompt(itemID: id)
+                if app.selectedImageItemIDs.isEmpty { openEditor(id) }   // 双击 = 单击（2026-10-26）
                 return nil
             }
             return event
@@ -320,9 +327,7 @@ private struct ImageGenPanel: View {
                         .onTapGesture {
                             searchFocused = false
                             if app.selectedImageItemIDs.isEmpty {
-                                // 点条目 → 右栏切到生图侧（右栏只跟点击走，2026-09-27）
-                                app.inspectorKind = .image
-                                app.inspectedImageItemID = item.id
+                                openEditor(item.id)
                             } else {
                                 toggleThumbSelection(item.id)
                             }
@@ -805,9 +810,7 @@ private struct ImageGenPanel: View {
             },
             onOpen: {
                 searchFocused = false
-                // 点条目 → 右栏切到生图侧（右栏只跟点击走，2026-09-27）
-                app.inspectorKind = .image
-                app.inspectedImageItemID = item.id
+                openEditor(item.id)
             }
         )
         .equatable()
@@ -846,8 +849,7 @@ private struct ImageGenPanel: View {
                     },
                     onOpen: {
                         searchFocused = false
-                        app.inspectorKind = .image
-                        app.inspectedImageItemID = item.id
+                        openEditor(item.id)
                     }
                 )
                 .equatable()
@@ -1838,6 +1840,8 @@ struct EditImagePromptSheet: View {
     @State private var finished = false
     @State private var showSubmitHint = false
     @State private var submitHint = ""
+    /// 右栏「历史版本」列表开着（2026-10-26）
+    @State private var showVersions = false
 
     // ⚠️ 自定义 init 必须显式接收并赋值 `onClose`（成员初始化器被它取代了）
     init(item: ImageGenItem, onClose: @escaping () -> Void,
@@ -1867,106 +1871,122 @@ struct EditImagePromptSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("编辑提示词")
                     .font(.title3.weight(.semibold))
+                if liveItem.type != nil {
+                    Text(liveItem.baseName).font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                    // 阶段 / 起始集（原来在生图页右栏「版本」，2026-10-26 并进弹窗）：说的是「这张卡是谁、从哪集起」，和名字放一起
+                    CardVersionFields(card: liveItem)
+                        .padding(.leading, 6)
+                }
                 Spacer()
             }
-            .padding(.horizontal, 16)
-            // 原 `.vertical, 12`：分割线拿走后面向内容那侧收掉
-            .padding(.top, 12)
-            .padding(.bottom, 4)
+            .padding(.bottom, 12)
 
-            // 素材区（参考图）：与分镜弹窗同款外观，但无「自动匹配」、无角色徽章（理由见类型注释）
-            if showsMaterialSection {
-            MaterialSection(
-                imageRefs: liveItem.imageRefs,
-                showsAutoMatch: false,
-                emptyHint: "从素材库添加参考图，提示词用 @ 引用（生成时按顺序传给模型）",
-                // 同分镜：打开素材库抽屉并带上宿主
-                onAdd: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        app.toggleLibraryDrawer(target: .imageItem(item.id))
-                    }
-                },
-                onRemove: { refID, prefix, index in
-                    app.removeImageItemMaterial(itemID: item.id, refID: refID)
-                    editPrompt = AppModel.removeTokenAndRenumber(editPrompt, prefix: prefix, removedIndex: index)
-                },
-                onClear: {
-                    app.clearImageItemMaterials(itemID: item.id)
-                    editPrompt = AppModel.stripAllTokens(editPrompt)
-                },
-                onDrop: { app.addImageItemMaterial(itemID: item.id, libraryItemID: $0) }
-            )
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            }
-
-            PromptEditor(
-                text: $editPrompt,
-                slots: slotItems,
-                isEditable: true,
-                scrollable: true,               // 固定高度 + 内部滚动（弹窗是独立浮层，不影响列表性能）
-                clickToEdit: true,              // 平时只读（箭头），点一下才编辑——和剧本页的框一样
-                onFocusChange: { promptFocused = $0 }
-                // 在提示词里删掉内嵌缩略图：只删字，素材区不动（2026-10-16 用户定：提示词里删素材不删素材区的；素材区删了才清提示词）
-            )
-            // 2026-09-29 用户：提示词框**顶上去**（260 → 340）+ 去掉上面那条横线
-            .frame(height: 340)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.insetFill))
-            .inputChrome(focused: promptFocused, radius: 14)
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            // 原 `.padding(16)`：下侧朝向被删的那条线，收掉
-            .padding(.bottom, 6)
-
-            if let onSave {
-                // 旧页面（剧本里的素材编辑）自己管保存：保留原来的「取消 / 保存」
-                HStack {
-                    Spacer()
-                    Button("取消") {
-                        finished = true
-                        if let backup { app.rollbackImageItemEdits(to: backup) }
-                        onClose()
-                    }
-                    Button("保存") {
-                        guard onSave(editPrompt) else { return }
-                        finished = true
-                        onClose()
-                    }
-                    .buttonStyle(AccentButtonStyle())
-                    .tint(Theme.accent)
-                }
-                .padding(12)
-            } else {
-                // 生图页的编辑提示词（2026-10-10 用户定）：下面一行就是生成参数 + 提交生成。
-                // 点外面 / Esc 关掉 = 取消（提示词、参考图、参数都回到打开时的样子）；提交生成 = 保存 + 提交。
-                HStack(spacing: 10) {
-                    ImageParamControls(item: liveItem, compact: false)
-                    Spacer(minLength: 8)
-                    Button { submit() } label: { Text("提交生成").lineLimit(1).fixedSize() }
-                        .buttonStyle(AccentButtonStyle())
-                        .keyboardShortcut(.return, modifiers: .command)
-                        .disabled(liveItem.status.isBusy)
-                        .help("保存提示词和参数，并提交生成（⌘↩）")
-                        .dropdownPopover(isPresented: $showSubmitHint) {
-                            Label(submitHint, systemImage: "exclamationmark.triangle.fill").font(.caption).padding(12)
+            // 两栏（2026-10-26 用户：和段落详情一样）：左边素材 + 提示词 + 参数；右边这张卡现在的图 + 音色（只有角色卡）
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
+                // 素材区（参考图）：与分镜弹窗同款外观，但无「自动匹配」、无角色徽章（理由见类型注释）
+                if showsMaterialSection {
+                MaterialSection(
+                    imageRefs: liveItem.imageRefs,
+                    showsAutoMatch: false,
+                    emptyHint: "从素材库添加参考图，提示词用 @ 引用（生成时按顺序传给模型）",
+                    // 同分镜：打开素材库抽屉并带上宿主
+                    onAdd: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            app.toggleLibraryDrawer(target: .imageItem(item.id))
                         }
+                    },
+                    onRemove: { refID, prefix, index in
+                        app.removeImageItemMaterial(itemID: item.id, refID: refID)
+                        editPrompt = AppModel.removeTokenAndRenumber(editPrompt, prefix: prefix, removedIndex: index)
+                    },
+                    onClear: {
+                        app.clearImageItemMaterials(itemID: item.id)
+                        editPrompt = AppModel.stripAllTokens(editPrompt)
+                    },
+                    onDrop: { app.addImageItemMaterial(itemID: item.id, libraryItemID: $0) }
+                )
                 }
-                .padding(.horizontal, 16).padding(.vertical, 12)
-                // ⌘S：只保存、不生成（生成要花钱）。没有按钮，只有快捷键
-                .background {
-                    Button("") { saveWithoutSubmitting() }
-                        .keyboardShortcut("s", modifiers: .command)
-                        .frame(width: 0, height: 0).opacity(0).allowsHitTesting(false)
+
+                PromptEditor(
+                    text: $editPrompt,
+                    slots: slotItems,
+                    isEditable: true,
+                    scrollable: true,               // 固定高度 + 内部滚动（弹窗是独立浮层，不影响列表性能）
+                    clickToEdit: true,              // 平时只读（箭头），点一下才编辑——和剧本页的框一样
+                    onFocusChange: { promptFocused = $0 }
+                    // 在提示词里删掉内嵌缩略图：只删字，素材区不动（2026-10-16 用户定：提示词里删素材不删素材区的；素材区删了才清提示词）
+                )
+                // 2026-09-29 用户：提示词框**顶上去**（260 → 340）+ 去掉上面那条横线；2026-10-26 改两栏后再高到 400
+                .frame(height: 400)
+                .background(RoundedRectangle(cornerRadius: 14).fill(.insetFill))
+                .inputChrome(focused: promptFocused, radius: 14)
+                .padding(.top, 10)
+
+                if let onSave {
+                    // 旧页面（剧本里的素材编辑）自己管保存：保留原来的「取消 / 保存」
+                    HStack {
+                        Spacer()
+                        Button("取消") {
+                            finished = true
+                            if let backup { app.rollbackImageItemEdits(to: backup) }
+                            onClose()
+                        }
+                        Button("保存") {
+                            guard onSave(editPrompt) else { return }
+                            finished = true
+                            onClose()
+                        }
+                        .buttonStyle(AccentButtonStyle())
+                        .tint(Theme.accent)
+                    }
+                    .padding(.top, 12)
+                } else {
+                    // 生图页的编辑提示词（2026-10-10 用户定）：下面一行就是生成参数 + 提交生成。
+                    // 点外面 / Esc 关掉 = 取消（提示词、参考图、参数都回到打开时的样子）；提交生成 = 保存 + 提交。
+                    HStack(spacing: 10) {
+                        ImageParamControls(item: liveItem, compact: false)
+                        Spacer(minLength: 8)
+                        Button { submit() } label: { Text("提交生成").lineLimit(1).fixedSize() }
+                            .buttonStyle(AccentButtonStyle())
+                            .keyboardShortcut(.return, modifiers: .command)
+                            .disabled(liveItem.status.isBusy)
+                            .help("保存提示词和参数，并提交生成（⌘↩）")
+                            .dropdownPopover(isPresented: $showSubmitHint) {
+                                Label(submitHint, systemImage: "exclamationmark.triangle.fill").font(.caption).padding(12)
+                            }
+                    }
+                    .padding(.top, 12)
+                    // ⌘S：只保存、不生成（生成要花钱）。没有按钮，只有快捷键
+                    .background {
+                        Button("") { saveWithoutSubmitting() }
+                            .keyboardShortcut("s", modifiers: .command)
+                            .frame(width: 0, height: 0).opacity(0).allowsHitTesting(false)
+                    }
                 }
+                }
+                .frame(maxWidth: .infinity)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    versionHeader
+                    currentImagePreview
+                    // 用到它的分段（原来在生图页右栏，2026-10-26 并进弹窗；一律一行汇总，见 `CardUsageSummary`）
+                    CardUsageSummary(card: liveItem, onJump: onClose)
+                    // 角色卡的音色（只给生视频用，不传给生图模型；改了马上存，不跟着弹窗回滚，见 `CardVoiceRow`）
+                    if liveItem.type == .character {
+                        CardVoiceRow(card: liveItem)
+                    }
+                }
+                .frame(width: 360)
             }
         }
-        // **只固定宽度**（同 EditPromptSheet）：里面的 `PromptEditor` 已写死 `.frame(height: 260)`，
-        // 内容高度固定，外层钉死 420 只会多出空白。
-        .frame(width: 620)
+        .padding(16)
+        // 宽 1000（和段落详情差不多）；窗口比它窄时跟着缩（窗口最窄 640）。高度由左栏定（右栏收紧到比左栏矮，2026-10-26 用户：别滑动）
+        .frame(minWidth: 0, idealWidth: 1000, maxWidth: 1000)
         .onAppear {
             // 打开时备份条目（提示词、参考图、参数），没提交就关掉时回滚
             backup = app.imageItems.first { $0.id == item.id }
@@ -2000,10 +2020,174 @@ struct EditImagePromptSheet: View {
         finished = true
         onClose()
     }
+
+    /// 现在显示的那一版的图（有图才算；素材库「已入库」按它判断）
+    private var shownResultID: UUID? {
+        let card = liveItem
+        guard card.viewingFailureID == nil,
+              let result = card.results.first(where: { $0.id == card.selectedResultID }) ?? card.latestResult,
+              result.localPath != nil else { return nil }
+        return result.id
+    }
+
+    /// 右栏上面一行：「当前：第 N 版」+「历史版本」（2026-10-26 用户：和段落详情一样）
+    private var versionHeader: some View {
+        let card = liveItem
+        let currentID = card.viewingFailureID ?? (card.results.first { $0.id == card.selectedResultID } ?? card.latestResult)?.id
+        return HStack(spacing: 8) {
+            Text(currentID.flatMap { card.versionNumber(of: $0) }.map { "当前：第 \($0) 版" } ?? "还没有版本")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+            Spacer(minLength: 4)
+            Button { showVersions = true } label: {
+                Label("历史版本", systemImage: "clock.arrow.circlepath").font(.system(size: 12))
+            }
+            .buttonStyle(QuietButtonStyle(hover: .capsule))
+            .disabled(card.versionEntries.isEmpty)
+            .help("看这张卡生成过的每一版，点一版换过去（提示词和参数一起换）")
+            .dropdownPopover(isPresented: $showVersions) {
+                ImageVersionList(card: card, currentID: currentID) { entry in
+                    showVersions = false
+                    applyVersion(entry)
+                }
+            }
+        }
+        .frame(height: 22)
+    }
+
+    /// 换到某一版：和生图页右栏点版本同一个动作（图、提示词、参考图、参数一起换）。
+    /// 换版本算数：备份跟着更新，没提交就关掉也不弹回打开时那一版（不然图是这一版、提示词又被改回去，两边对不上）
+    private func applyVersion(_ entry: ImageVersionEntry) {
+        switch entry {
+        case .result(let result, _): app.applyImageResult(item.id, resultID: result.id)
+        case .failure(let failure, _): app.applyImageFailure(item.id, failureID: failure.id)
+        }
+        editPrompt = liveItem.prompt
+        backup = liveItem
+    }
+
+    /// 右栏图：这张卡现在显示的那一版（右栏选中的版本，没选就是最新的；点了失败的那版就写失败原因）+ 一行「画幅 · 档位 · 时间」
+    private var currentImagePreview: some View {
+        let card = liveItem
+        let failure = card.viewingFailure
+        let result = failure == nil ? (card.results.first { $0.id == card.selectedResultID } ?? card.latestResult) : nil
+        let aspect = failure?.aspectRatio ?? result?.aspectRatio ?? card.aspectRatio
+        return VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14).fill(.insetFill)
+                if card.status == .generating {
+                    GenerationProgressView(progress: 0)
+                } else if let failure {
+                    VStack(spacing: 6) {
+                        Image(systemName: "xmark.circle").font(.title2).foregroundStyle(Theme.danger)
+                        Text("这一版生成失败").font(.caption).foregroundStyle(.secondary)
+                        Text(Formatters.errorSummary(failure.error))
+                            .font(.caption2).foregroundStyle(Theme.danger.opacity(0.9))
+                            .multilineTextAlignment(.center).lineLimit(3).padding(.horizontal, 10)
+                            .help(failure.error)
+                    }
+                } else if let path = result?.localPath {
+                    AsyncThumbImage(path: path, contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: "photo").font(.title2).foregroundStyle(.tertiary)
+                        Text("还没有图").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .aspectRatio(InspectorPreview.ratio(aspect), contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            // 素材库状态叠在图右上角（2026-10-26 用户：不单独占一行）；有图才有
+            .overlay(alignment: .topTrailing) {
+                if let id = shownResultID {
+                    let saved = app.library.contains { $0.imageGenResultID == id }
+                    Text(saved ? "已入库" : "未入库")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(saved ? Theme.success : Color.white.opacity(0.85))
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                        .padding(8)
+                        .allowsHitTesting(false)
+                }
+            }
+            // 点图看大图（原来在生图页右栏点，2026-10-26 右栏去掉后挪到这里）
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+            .hoverHighlight(radius: 14, clickable: result?.localPath != nil)
+            .onTapGesture {
+                guard let result, result.localPath != nil else { return }
+                app.previewingImageResultID = result.id
+                app.previewingImageItemID = card.id
+            }
+            .help(result?.localPath == nil ? "" : "点一下看大图")
+            if result != nil || failure != nil {
+                let parts = [aspect.displayName, (failure?.quality ?? result?.quality ?? card.quality).displayName,
+                             (failure?.createdAt ?? result?.createdAt).map { Self.timeFormatter.string(from: $0) }].compactMap { $0 }
+                Text(parts.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f
+    }()
 }
 
-/// 缩略图工作区右侧详情：选中图库条目后，就地查看结果、提示词、参数、参考图和版本。
-/// ⚠️ 2026-09-27：它挂在 **RootView 的共享右侧栏**里（四页共用、切换不拆建），所以不再是 private。
+/// 生图编辑弹窗「历史版本」列表：最新的在前；失败的那一版也在（红字写原因，点进去改了重交，见版本历史规则）
+private struct ImageVersionList: View {
+    let card: ImageGenItem
+    let currentID: UUID?
+    let onChoose: (ImageVersionEntry) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(card.versionEntries.reversed()) { entry in
+                    Button { onChoose(entry) } label: { row(entry) }
+                        .buttonStyle(QuietButtonStyle(hover: .fill(radius: 8)))
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 300)
+        .frame(maxHeight: 360)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func row(_ entry: ImageVersionEntry) -> some View {
+        let picked = entry.id == currentID
+        return HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6).fill(.insetFill)
+                if let path = entry.result?.localPath {
+                    AsyncThumbImage(path: path)
+                } else if entry.failure != nil {
+                    Image(systemName: "xmark.circle").foregroundStyle(Theme.danger)
+                }
+            }
+            .frame(width: 64, height: 36)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("第 \(entry.number) 版").font(.system(size: 12, weight: picked ? .semibold : .regular))
+                if let failure = entry.failure {
+                    Text("失败：\(Formatters.errorSummary(failure.error))")
+                        .font(.system(size: 11)).foregroundStyle(Theme.danger).lineLimit(1)
+                } else if let created = entry.result?.createdAt {
+                    Text(EditImagePromptSheet.timeFormatter.string(from: created)).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            if picked {
+                Image(systemName: "checkmark").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+            }
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(picked ? Theme.accent.opacity(0.12) : Color.clear))
+        .contentShape(Rectangle())
+    }
+}
+
 
 // 🆕 2026-10-03（用户定）：生图侧"点击看大图"——延迟 0.25s 触发，
 // 双击（开编辑弹窗）会把这它取消，避免"双击第一下先弹出大图"
@@ -2022,347 +2206,11 @@ final class ImagePreviewOnTap: @unchecked Sendable {
         work?.cancel()
         work = nil
     }
-}
 
-struct ImageItemInspector: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.colorScheme) private var colorScheme
-    let item: ImageGenItem
-    @Binding var selectedResultID: UUID?
-    @Binding var historyScrollAnchorID: UUID?
-
-    private var selectedResult: ImageGenResult? {
-        item.results.first(where: { $0.id == selectedResultID }) ?? item.latestResult
-    }
-
-    /// 历史版本里高亮哪一项：在看失败的那一版就是它，否则是显示的那张图
-    private func isPicked(_ entry: ImageVersionEntry) -> Bool {
-        if let failureID = item.viewingFailureID { return entry.id == failureID }
-        return entry.result != nil && entry.id == selectedResult?.id
-    }
-
-    private var isViewingOlderVersion: Bool {
-        guard let selectedResult, let latestResult = item.latestResult else { return false }
-        return selectedResult.id != latestResult.id
-    }
-
-    private var slots: [SlotItem] {
-        item.imageRefs.enumerated().map { index, ref in
-            let asset = app.libraryItem(ref.libraryItemID)
-            return SlotItem(
-                token: "图\(index + 1)",
-                name: asset?.matchName ?? "图\(index + 1)",
-                thumbnailURL: asset?.existingLocalImageURL,
-                remoteThumbnailURL: asset?.remoteURL.flatMap(URL.init(string:))
-            )
-        }
-    }
-
-    private var statusTitle: String {
-        switch item.status {
-        case .pending: "待生成"
-        case .queued: "排队中"
-        case .generating: "生成中"
-        case .downloading: "下载中"
-        case .success: "已完成"
-        case .failed: "失败"
-        }
-    }
-
-    private var statusColor: Color {
-        switch item.status {
-        case .pending: .secondary
-        case .queued: Theme.warning
-        case .generating, .downloading: Theme.accent
-        case .success: Theme.success
-        case .failed: Theme.danger
-        }
-    }
-
-    /// B 款视觉：分节小标题（轻量、次要色；纯视觉）
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-    }
-
-    /// 点预览：看大图（没有图就什么都不做）
-    private func openBigPreview() {
-        guard let result = selectedResult, result.localPath != nil else { return }
-        app.previewingImageResultID = result.id
-        app.previewingImageItemID = item.id
-    }
-
-    /// 这一版的参数小标签
-    private var paramChips: [String] {
-        let result = selectedResult
-        // 在看失败的那一版：写那一次的设置和时间
-        let failure = item.viewingFailure
-        var chips: [String] = []
-        if let model = (failure?.model ?? result?.model).flatMap({ $0.isEmpty ? nil : $0 }) ?? item.model.flatMap({ $0.isEmpty ? nil : $0 }) ?? app.imageModelNames.first {
-            chips.append(model)
-        }
-        chips.append((failure?.aspectRatio ?? result?.aspectRatio ?? item.aspectRatio).displayName)
-        chips.append((failure?.quality ?? result?.quality ?? item.quality).displayName)
-        if let created = failure?.createdAt ?? result?.createdAt {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "MM-dd HH:mm"
-            chips.append(formatter.string(from: created))
-        }
-        return chips
-    }
-
-    var body: some View {
-        let _ = BodyEvalCounter.bump("ImageItemInspector")
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // 🆕 2026-10-05（B 款视觉）：名称/状态标题行回归（纯视觉，行为不变；觉得多余可撤）
-                    headerOverlay
-                        .padding(.bottom, 2)
-
-                    // 当前这一版的大图（2026-10-10：右栏原来提示词下面整片空白）。点一下看大图
-                    resultPreview
-                        .contentShape(RoundedRectangle(cornerRadius: 14))
-                        .hoverHighlight(radius: 14, clickable: selectedResult?.localPath != nil)
-                        .onTapGesture { openBigPreview() }
-                        .help(selectedResult?.localPath == nil ? "" : "点一下看大图")
-
-                    // 「入库 / 在访达」按钮**已挪到预览弹窗底部**（2026-09-26 用户要求）——
-                    // 点图看大图后，弹窗右栏底部那排（保存到素材库 / 在访达中显示）负责这两件事，
-                    // 面板里不再重复。别加回来。
-
-                    // 历史版本（2026-09-26：**0 版也显示**占位，与视频侧统一）
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionLabel("历史版本（\(item.versionEntries.count)）")
-                        if item.versionEntries.isEmpty {
-                            // 空态占位：**和真版本卡同尺寸同结构**（实测真卡 = 82×71pt：
-                            // 小图区 72×44 + 内距 5 + 间距 4 + 「第 1 版」标签行）——2026-09-26 用户定：
-                            // 尺寸固定=跟真卡一样，不能是另一个形状。
-                            VStack(spacing: 4) {
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(.insetFill)
-                                    .frame(width: 72, height: 44)
-                                    .overlay {
-                                        Text("暂无任务")
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                Text("第 1 版")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(5)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.06)))
-                        } else {
-                            ScrollViewReader { proxy in
-                                ScrollView(.horizontal) {
-                                    HStack(spacing: 8) {
-                                        // 最新的在前，失败的那几次也是一版（2026-10-16 和生视频统一）
-                                        ForEach(item.versionEntries.reversed()) { entry in
-                                            let picked = isPicked(entry)
-                                            Button {
-                                                if let failure = entry.failure {
-                                                    app.applyImageFailure(item.id, failureID: failure.id)
-                                                } else {
-                                                    selectedResultID = entry.id
-                                                }
-                                            } label: {
-                                                VStack(spacing: 4) {
-                                                    if let path = entry.result?.localPath {
-                                                        AsyncThumbImage(path: path)
-                                                            .frame(width: 72, height: 44)
-                                                            .clipShape(RoundedRectangle(cornerRadius: 6))
-                                                    } else {
-                                                        RoundedRectangle(cornerRadius: 6)
-                                                            .fill(.insetFill)
-                                                            .frame(width: 72, height: 44)
-                                                            .overlay {
-                                                                if entry.failure != nil {
-                                                                    Image(systemName: "xmark.circle").foregroundStyle(Theme.danger)
-                                                                }
-                                                            }
-                                                    }
-                                                    HStack(spacing: 3) {
-                                                        Text("第 \(entry.number) 版")
-                                                        if entry.failure != nil { Text("失败").foregroundStyle(Theme.danger) }
-                                                    }
-                                                    .font(.caption2)
-                                                }
-                                                .padding(5)
-                                                .background(RoundedRectangle(cornerRadius: 8).fill(
-                                                    picked ? Theme.accent.opacity(0.14) : Color.secondary.opacity(0.06)
-                                                ))
-                                                .overlay {
-                                                    RoundedRectangle(cornerRadius: 8)
-                                                        .strokeBorder(picked ? Theme.accent : .clear, lineWidth: 1.5)
-                                                }
-                                            }
-                                            .buttonStyle(QuietButtonStyle())
-                                            .help(entry.failure.map { "失败：\($0.error)（点一下换回这一次的提示词和参数，改好再生成）" } ?? "")
-                                            .id(entry.id)
-                                        }
-                                    }
-                                }
-                                .scrollIndicators(.hidden)
-                                .scrollPosition(id: $historyScrollAnchorID, anchor: .leading)
-                                .onAppear {
-                                    // 第一次打开时定位到当前版本；后续模式切换使用父视图保存的可视锚点。
-                                    guard historyScrollAnchorID == nil,
-                                          let id = item.viewingFailureID ?? selectedResult?.id ?? item.latestResult?.id else { return }
-                                    DispatchQueue.main.async { proxy.scrollTo(id, anchor: .leading) }
-                                }
-                                .onChange(of: item.versionEntries.map(\.id)) { _, ids in
-                                    // 最新的在最前：生成完成（或失败）后回到最前面
-                                    guard let id = ids.last else { return }
-                                    DispatchQueue.main.async { proxy.scrollTo(id, anchor: .leading) }
-                                }
-                            }
-                        }
-                        // 看的是旧版本时的提示（原来在右栏底部的「生成参数」块里；参数搬进工具条后跟着历史版本走）
-                        if isViewingOlderVersion, item.viewingFailureID == nil, let result = selectedResult, result.model == nil {
-                            Text("此旧版本没有保存生成参数；应用时保留当前参数。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        if isViewingOlderVersion, item.viewingFailureID == nil, selectedResult?.imageRefs == nil {
-                            Text("此旧版本没有保存参考图记录；当前参考图未更改。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-
-                    // 这一版的参数：模型 · 比例 · 质量 · 生成时间（旧版本没有保存的就用卡片现在的）
-                    InspectorChips(items: paramChips)
-
-                    // 哪些分段用到了这张卡 + 有没有入库（2026-10-11 用户：放上面。提示词可以很长，原来放在它下面要滚到底才看得到）
-                    CardUsageSection(card: item, resultID: selectedResult?.localPath == nil ? nil : selectedResult?.id)
-
-                    // 阶段 / 起始集（名字只放基础名，这两样不进提示词）
-                    CardVersionSection(card: item)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        sectionLabel("提示词")
-                        if isViewingOlderVersion, selectedResult?.prompt == nil {
-                            Text("此旧版本没有保存提示词快照；当前编辑器保留条目现有提示词。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        ReadonlyPromptText(
-                            text: item.prompt.isEmpty ? "（无提示词，点此编辑）" : item.prompt,
-                            slots: selectedResult?.imageRefs != nil || selectedResult?.id == item.latestResult?.id || selectedResult == nil ? slots : [],
-                            isPlaceholder: item.prompt.isEmpty
-                        )
-                        // 随提示词内容自然增高；超出右栏的部分由外层详情 ScrollView 滚动。
-                        // ⚠️ 空着时也要有**最小高度**（2026-09-29 用户："空的时候提示词框高度太少"）
-                        .frame(maxWidth: .infinity, minHeight: 76, alignment: .topLeading)
-                        .padding(9)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(.insetFill))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    .contentShape(Rectangle())
-                    .hoverHighlight(radius: 10)
-                    .onTapGesture {
-                        app.activeModal = .editImagePrompt(itemID: item.id)
-                    }
-                    .help("点击编辑当前已应用版本的提示词")
-
-                    // 生成设置 + 提交生成已挪到**面板底部固定组件**（2026-09-26 用户定）：不参与滚动；
-                    // 标题「生成设置」字样也去掉了。
-                }
-                .padding(16)
-            }
-            .scrollIndicators(.hidden)
-            .contentMargins(.top, 0, for: .scrollContent)
-            // 底部留出工具条的高度：工具条整窗居中，会盖住右栏下半部分，长提示词要能滚到它上面
-            .contentMargins(.bottom, ToolbarRowLayout.clearance, for: .scrollContent)
-        }
-        .frame(maxHeight: .infinity)
-    }
-
-    /// 名称 / 状态 / 第 N 版（叠在方形预览顶部；2026-09-26 从独立一行挪进来，方形上移）
-    private var headerOverlay: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(item.displayName).font(.title3.weight(.semibold)).lineLimit(1)
-            Text(statusTitle)
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(statusColor.opacity(0.14)))
-                .foregroundStyle(statusColor)
-            Spacer(minLength: 4)
-            if let id = item.viewingFailureID ?? selectedResult?.id, let number = item.versionNumber(of: id) {
-                Text("第 \(number) 版")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        // ⚠️ 别挡点图看大图
-        .allowsHitTesting(false)
-    }
-
-    @ViewBuilder
-    private var resultPreview: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.insetFill)
-            // 🎯 2026-09-29 用户定（对齐生视频侧详情）：**再生成时不显示上一版** ——
-            // 视频侧详情同款：当前版本还没有视频帧时，预览就是灰底 + 环（旧画面不显示）。
-            if item.status == .generating {
-                GenerationProgressView(progress: 0)
-            } else if let failure = item.viewingFailure {
-                // 点了历史版本里失败的那一版：写这一次的失败原因（2026-10-16）
-                VStack(spacing: 6) {
-                    Image(systemName: "xmark.circle").font(.title2).foregroundStyle(Theme.danger)
-                    Text("这一版生成失败").font(.caption).foregroundStyle(.secondary)
-                    Text(Formatters.errorSummary(failure.error))
-                        .font(.caption2).foregroundStyle(Theme.danger.opacity(0.9))
-                        .multilineTextAlignment(.center).lineLimit(3).padding(.horizontal, 10)
-                        .help(failure.error)
-                    Text("提示词和参数已换回这一次的，改好再生成").font(.caption2).foregroundStyle(.secondary)
-                }
-            } else if let path = selectedResult?.localPath {
-                // 预览框内使用 .fit：保留整张图，不裁掉横图或竖图边缘。
-                // 用缩略图缓存（640 像素）、不解码原图：右栏常驻，点一张卡就换一张，4K 原图每次解码太重（要看清点一下看大图）
-                AsyncThumbImage(path: path, contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // 下载中 = 不转圈、只给文案；失败 = 红叉 + 原因摘要；空闲 = photo + "暂无图片"。
-                VStack(spacing: 6) {
-                    if item.status == .downloading {
-                        Text("正在下载图片")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    } else if item.status == .failed {
-                        // 生视频侧失败态同款：红叉 + "生成失败" + 失败原因摘要（悬停看全文）
-                        Image(systemName: "xmark.circle").font(.title2).foregroundStyle(Theme.danger)
-                        Text("生成失败").font(.caption).foregroundStyle(.secondary)
-                        if let raw = item.errorMessage, !raw.isEmpty {
-                            Text(Formatters.errorSummary(raw))
-                                .font(.caption2)
-                                .foregroundStyle(Theme.danger.opacity(0.9))
-                                .multilineTextAlignment(.center)
-                                .lineLimit(3)
-                                .help(raw)
-                        }
-                    } else if item.status == .queued, let waiting = item.errorMessage, !waiting.isEmpty {
-                        // 变化版同时提交、在等基础版入库一版定妆图（2026-10-11）：写出在等什么
-                        Image(systemName: "hourglass").font(.title2).foregroundStyle(Theme.warning)
-                        Text("排队中").font(.caption).foregroundStyle(.secondary)
-                        Text(waiting).font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(3).padding(.horizontal, 10)
-                    } else {
-                        Image(systemName: "photo").foregroundStyle(.secondary)
-                        Text("暂无图片").font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(InspectorPreview.ratio(selectedResult?.aspectRatio ?? item.aspectRatio), contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        // ⚠️ 生成中的呼吸光晕**已去掉**（2026-09-27 用户："太卡了"）——连续动画挂在常驻面板上开销大。
-        //    状态反馈继续走转圈 / 状态徽章；想再加请用**非连续**效果（比如一次性闪一下）。
-    }
+    /// 单击开编辑弹窗的时刻：双击的第二下（0.5 秒内）由双击监听吞掉，别点进刚弹出的弹窗
+    private var editorOpenedAt: Date = .distantPast
+    func markEditorOpened() { editorOpenedAt = Date() }
+    var justOpenedEditor: Bool { Date().timeIntervalSince(editorOpenedAt) < 0.5 }
 }
 
 /// 生图预览弹窗（RootView overlay 按窗口比例渲染）：左大图 + 右版本列表/保存/访达

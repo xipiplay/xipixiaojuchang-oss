@@ -355,6 +355,10 @@ struct LegacyImageCard: Codable, Equatable, Sendable {
     var referenceCardID: UUID? = nil
     /// 失败的生图（`ImageGenItem.failures`，2026-10-16 起留成版本）。旧文件没有 = nil
     var failures: [ImageGenFailure]? = nil
+    /// 角色卡绑的音色（`ImageGenItem.voiceAudioID` = 素材库条目 ID / `voiceText` / `voiceMode` 用哪种，2026-10-26）。旧文件没有 = nil
+    var voiceAudioID: UUID? = nil
+    var voiceText: String? = nil
+    var voiceMode: VoiceMode? = nil
 }
 
 struct LegacyLibraryEntry: Codable, Equatable, Sendable {

@@ -133,6 +133,8 @@ final class LegacyRoundTripTests: XCTestCase {
         var legacy = richSnapshot()
         var staged = ImageGenItem(projectKey: "P", type: .character, name: "周承山", prompt: "这个人是：\"周承山\"", status: .pending)
         staged.stage = "四十岁"; staged.fromEpisode = 3
+        let voiceID = UUID()
+        staged.voiceAudioID = voiceID; staged.voiceText = "低沉沙哑"; staged.voiceMode = .text   // 音色（2026-10-26）
         var old = ImageGenItem(projectKey: "P", type: .character, name: "第5集的许曼", prompt: "这个人是：\"第5集的许曼\"", status: .pending)
         old.referenceCardID = staged.id          // 变化版记着基础版（出图时挂它的图）
         legacy.imageItems += [staged, old]
@@ -151,6 +153,11 @@ final class LegacyRoundTripTests: XCTestCase {
         XCTAssertEqual(backAgain.imageItems.first { $0.id == old.id }?.fromEpisode, 5, "拆开以后存一次再读，起始集还在")
         XCTAssertEqual(backAgain.imageItems.first { $0.id == staged.id }?.stage, "四十岁")
         XCTAssertEqual(backAgain.imageItems.first { $0.id == old.id }?.referenceCardID, staged.id)
+        XCTAssertEqual(stagedBack.voiceAudioID, voiceID, "音色重开项目还在")
+        XCTAssertEqual(stagedBack.voiceText, "低沉沙哑")
+        XCTAssertEqual(stagedBack.voiceMode, .text)
+        XCTAssertEqual(backAgain.imageItems.first { $0.id == staged.id }?.voiceAudioID, voiceID)
+        XCTAssertNil(oldBack.voiceAudioID)
     }
 
     /// 「待生成」版本（2026-10-15）：当前是它的卡重开项目还是它（不能兜底成最后一版），收起来的提示词也在

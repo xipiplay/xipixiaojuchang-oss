@@ -105,6 +105,8 @@ enum StoryboardNames {
     /// 头行方括号里的一项 → 名字：去掉「图N」标记、出场备注和引号，场景再去掉「日 / 夜 / 内 / 外」；是「无」之类的占位 → 空串
     static func cleanName(_ piece: String, isScene: Bool = false) -> String {
         var name = strippingAnnotations(strippingMaterialTokens(piece)).trimmingCharacters(in: quotes)
+        // 名字前多出来的「@」（提示词框里打了 @ 没选就关掉，2026-10-26）：名字不会以 @ 开头，去掉，不然读成「@周承山」对不上卡
+        while let first = name.first, first == "@" || first == "＠" { name = String(name.dropFirst()).trimmingCharacters(in: quotes) }
         if isScene { name = StoryboardInference.normalized(name) ?? name }
         return placeholders.contains(name.lowercased()) ? "" : name
     }

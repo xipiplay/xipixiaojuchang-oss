@@ -200,9 +200,20 @@ struct GenerateView: View {
         return local.x >= 0 && local.y >= 0 && local.x <= frame.width && local.y <= frame.height
     }
 
+    /// 单击分镜缩略图 / 卡片 = 打开段落详情（和工作台里点开的同一个；2026-10-26 用户：去掉右边详情，信息都在弹窗里）。
+    /// 照样记成「正在看的分镜」：底栏的生成参数跟着它
+    private func openShotEditor(_ id: UUID) {
+        app.inspectorKind = .video
+        app.timelineShotID = id
+        ImagePreviewOnTap.shared.markEditorOpened()
+        app.activeModal = .segmentDetail(shotID: id)
+    }
+
     private func installDblThumbMonitor() {
         guard dblThumbMonitor == nil else { return }
         dblThumbMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            // 单击已经开了弹窗：双击的第二下别落进刚弹出的弹窗里
+            if event.clickCount >= 2, ImagePreviewOnTap.shared.justOpenedEditor { return nil }
             guard event.clickCount == 2, let w = event.window, !(w is NSPanel),
                                     app.activeModal == nil, !app.showLibraryDrawer, !app.showTaskDrawer, !app.showHistoryDrawer,
                   app.isProductionWorkspaceVisible,
@@ -213,10 +224,10 @@ struct GenerateView: View {
             if let id = shotThumbFrames.hit(CGRect(x: dblLocal(dblThumbFrame, w, event.locationInWindow).x,
                                                    y: dblLocal(dblThumbFrame, w, event.locationInWindow).y,
                                                    width: 1, height: 1)).first {
-                // 🆕 2026-10-08（用户定）：**悬停 = 播放（有声）、双击 = 弹出大窗口播放**（同生图双击看大图；
-                // 编辑弹窗从详情提示词进；选择模式下双击不动作）
-                AppLog.write("dblClick", "分镜缩略图双击 → 大窗口播放 id=\(id)")
-                if app.selectedShotIDs.isEmpty { app.openShotPreview(id) }
+                // 2026-10-26：双击 = 单击（打开段落详情；原来是大窗口播放，和生图页一样改掉——第一下还没开弹窗时第二下会开大窗口）。
+                // 悬停播放照旧；选择模式下双击不动作
+                AppLog.write("dblClick", "分镜缩略图双击 → 段落详情 id=\(id)")
+                if app.selectedShotIDs.isEmpty { openShotEditor(id) }
                 return nil
             }
             return event
@@ -247,6 +258,7 @@ struct GenerateView: View {
     private func installDblCardMonitor() {
         guard dblCardMonitor == nil else { return }
         dblCardMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { event in
+            if event.clickCount >= 2, ImagePreviewOnTap.shared.justOpenedEditor { return nil }
             guard event.clickCount == 2, let w = event.window, !(w is NSPanel),
                                     app.activeModal == nil, !app.showLibraryDrawer, !app.showTaskDrawer, !app.showHistoryDrawer,
                   app.isProductionWorkspaceVisible,
@@ -257,8 +269,8 @@ struct GenerateView: View {
             if let id = shotCardMarqueeFrames.hit(CGRect(x: dblLocal(dblCardFrame, w, event.locationInWindow).x,
                                                          y: dblLocal(dblCardFrame, w, event.locationInWindow).y,
                                                          width: 1, height: 1)).first {
-                AppLog.write("dblClick", "分镜卡片双击 → 编辑弹窗 id=\(id)")
-                app.activeModal = .editVideoPrompt(shotID: id)
+                AppLog.write("dblClick", "分镜卡片双击 → 段落详情 id=\(id)")
+                if app.selectedShotIDs.isEmpty { openShotEditor(id) }   // 双击 = 单击（2026-10-26）
                 return nil
             }
             return event
@@ -406,9 +418,7 @@ struct GenerateView: View {
                             .onTapGesture {
                                 shotThumbSearchFocused = false
                                 if app.selectedShotIDs.isEmpty {
-                                    // 点条目 → 右栏切到视频侧（右栏只跟点击走，2026-09-27）
-                                    app.inspectorKind = .video
-                                    app.timelineShotID = row.shot.id
+                                    openShotEditor(row.shot.id)
                                 } else {
                                     toggleShotSelection(row.shot.id)
                                 }
@@ -1200,8 +1210,7 @@ struct GenerateView: View {
         .onTapGesture {
             shotThumbSearchFocused = false
             if app.selectedShotIDs.isEmpty {
-                app.inspectorKind = .video
-                app.timelineShotID = shot.id
+                openShotEditor(shot.id)
             } else {
                 toggleShotSelection(shot.id)
             }
@@ -1236,8 +1245,7 @@ struct GenerateView: View {
                 .onTapGesture {
                     shotThumbSearchFocused = false
                     if app.selectedShotIDs.isEmpty {
-                        app.inspectorKind = .video
-                        app.timelineShotID = shot.id
+                        openShotEditor(shot.id)
                     } else {
                         toggleShotSelection(shot.id)
                     }
@@ -2607,18 +2615,8 @@ private struct ShotDetailCard: View {
     }
 
     private var slotItems: [SlotItem] {
-        var items: [SlotItem] = []
-        for (i, ref) in shot.imageRefs.enumerated() {
-            let item = app.libraryItem(ref.libraryItemID)
-            items.append(SlotItem(
-                token: "图\(i + 1)",
-                name: item?.fileName ?? item?.remoteURL ?? "图\(i + 1)",
-                thumbnailURL: item?.existingLocalImageURL,
-                remoteThumbnailURL: item?.remoteURL.flatMap { URL(string: $0) }
-            ))
-        }
-        items += SlotItem.mediaSlots(for: shot, in: app)
-        return items
+        // 和编辑弹窗同一套（绑了音色的角色图带小喇叭，2026-10-26）
+        SlotItem.list(for: shot, in: app)
     }
 
     // MARK: 左栏：资产库（点条目开预览；＋ 打开素材库抽屉并锁定到这张卡）
@@ -3570,30 +3568,6 @@ struct ThumbPlayerLayer: NSViewRepresentable {
         return v
     }
     func updateNSView(_ v: ThumbPlayerNSView, context: Context) { v.attach(player) }
-}
-
-struct ShotInspectorPanel: View {
-    @Environment(AppModel.self) private var app
-    @Binding var shot: ShotDraft
-    let index: Int
-    @Binding var isPlaying: Bool
-
-    var body: some View {
-        let _ = BodyEvalCounter.bump("ShotInspectorPanel")
-        ShotDetailCard(
-            shot: $shot,
-            isPlaying: $isPlaying,
-            clock: app.timelineClock,
-            shotOffset: 0,
-            onTogglePlay: { isPlaying.toggle() },
-            onToggleFullscreen: {
-                isPlaying = false
-                app.cinemaPlaying = true       // 全屏连播从当前分镜开始（独立层）
-            },
-            followsTimeline: false,
-            usesInspectorLayout: true
-        )
-    }
 }
 
 /// 时间轴（2026-09-17）：播放键 + 刻度尺 + 分镜段 + 播放头 + 缩放。
@@ -5387,19 +5361,8 @@ struct EditPromptSheet: View {
     /// 必须用 app.shots 里的**实时**数据：弹窗持有的 shot 是打开时的快照，
     /// 自动匹配/删素材后素材会变，用快照会导致缩略图不刷新（关掉重开才更新）。
     private var slotItems: [SlotItem] {
-        let live = liveShot
-        var items: [SlotItem] = []
-        for (i, ref) in live.imageRefs.enumerated() {
-            let item = app.libraryItem(ref.libraryItemID)
-            items.append(SlotItem(
-                token: "图\(i + 1)",
-                name: item?.matchName ?? "图\(i + 1)",
-                thumbnailURL: item?.existingLocalImageURL,
-                remoteThumbnailURL: item?.remoteURL.flatMap { URL(string: $0) }
-            ))
-        }
-        items += SlotItem.mediaSlots(for: live, in: app)
-        return items
+        // 同 `SlotItem.list`（绑了音色的角色图带小喇叭，2026-10-26）
+        SlotItem.list(for: liveShot, in: app)
     }
 
     var body: some View {
@@ -5415,6 +5378,46 @@ struct EditPromptSheet: View {
             .padding(.top, 12)
             .padding(.bottom, 4)
             }
+            editorColumn
+        }
+        // **只固定宽度**：里面的 `PromptEditor` 已经写死高度、内容高度是固定的，外层再钉高度只会多出一片空白
+        .frame(width: inline ? nil : 620)
+        .frame(maxWidth: inline ? .infinity : nil, maxHeight: inline ? .infinity : nil)
+        .onAppear {
+            // 打开时备份分镜（素材、提示词、参数），没提交就关掉时回滚（嵌在二级页面里的不回滚：改了就存）
+            if !inline { backup = app.shots.first { $0.id == shot.id } }
+        }
+        // 没提交 / 没保存就关掉（点外面、Esc、旧页面的取消）：撤销弹窗期间改的；嵌着的：离开前把没存的存上
+        .onDisappear {
+            if inline { saveInline() }
+            else if !finished, let backup { app.rollbackShotEdits(to: backup) }
+        }
+        // 嵌着的：别处改了这张卡的提示词（重新推理、换回别的版本、右边改素材）且没在打字 → 跟上
+        .onChange(of: liveShot.prompt) { _, updated in
+            if inline, !promptFocused, updated != editPrompt { editPrompt = updated }
+        }
+        // 嵌着的：没在打字时提示词变了（素材区删了素材、清空、自动匹配）→ 马上存
+        .onChange(of: editPrompt) { _, _ in
+            if inline, !promptFocused { saveInline() }
+        }
+        .onChange(of: autoMatchTrigger) { _, _ in autoMatch() }
+        // 自动匹配：有还没入库的图 → 先问一句（和工作台「匹配」「应用素材」一样，视频生成要用素材库里的图）
+        .alert("有 \(autoMatchPendingLibrary) 张图还没入库", isPresented: Binding(get: { autoMatchPendingLibrary > 0 }, set: { if !$0 { autoMatchPendingLibrary = 0 } })) {
+            Button("入库并匹配") { runEpisodeAutoMatch() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("匹配时会先存进素材库（后台上传，进度在素材库底部），视频生成才拿得到这些参考图。")
+        }
+        .alert("自动匹配", isPresented: Binding(get: { autoMatchNote != nil }, set: { if !$0 { autoMatchNote = nil } })) {
+            Button("好") {}
+        } message: {
+            Text(autoMatchNote ?? "")
+        }
+    }
+
+    /// 编辑区（素材 + 提示词 + 参数 / 提交）
+    private var editorColumn: some View {
+        VStack(spacing: 0) {
 
             // 素材区：与分镜卡片同款（添加 / 自动匹配 / 清空 + 素材 chips）；点 chip 把「图N是」插入编辑器，
             // 删素材时同步清理编辑器里对应的 token（否则会残留「图N是」）
@@ -5520,40 +5523,6 @@ struct EditPromptSheet: View {
                 }
             }
         }
-        // **只固定宽度**：里面的 `PromptEditor` 已经写死 `.frame(height: 260)`、内容高度是固定的，
-        // 外层再钉一个 520 只会多出一片空白（同 BatchImageParamView / BatchParamView 那个病）。
-        .frame(width: inline ? nil : 620)
-        .frame(maxWidth: inline ? .infinity : nil, maxHeight: inline ? .infinity : nil)
-        .onAppear {
-            // 打开时备份分镜（素材、提示词、参数），没提交就关掉时回滚（嵌在二级页面里的不回滚：改了就存）
-            if !inline { backup = app.shots.first { $0.id == shot.id } }
-        }
-        // 没提交 / 没保存就关掉（点外面、Esc、旧页面的取消）：撤销弹窗期间改的；嵌着的：离开前把没存的存上
-        .onDisappear {
-            if inline { saveInline() }
-            else if !finished, let backup { app.rollbackShotEdits(to: backup) }
-        }
-        // 嵌着的：别处改了这张卡的提示词（重新推理、换回别的版本、右边改素材）且没在打字 → 跟上
-        .onChange(of: liveShot.prompt) { _, updated in
-            if inline, !promptFocused, updated != editPrompt { editPrompt = updated }
-        }
-        // 嵌着的：没在打字时提示词变了（素材区删了素材、清空、自动匹配）→ 马上存
-        .onChange(of: editPrompt) { _, _ in
-            if inline, !promptFocused { saveInline() }
-        }
-        .onChange(of: autoMatchTrigger) { _, _ in autoMatch() }
-        // 自动匹配：有还没入库的图 → 先问一句（和工作台「匹配」「应用素材」一样，视频生成要用素材库里的图）
-        .alert("有 \(autoMatchPendingLibrary) 张图还没入库", isPresented: Binding(get: { autoMatchPendingLibrary > 0 }, set: { if !$0 { autoMatchPendingLibrary = 0 } })) {
-            Button("入库并匹配") { runEpisodeAutoMatch() }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("匹配时会先存进素材库（后台上传，进度在素材库底部），视频生成才拿得到这些参考图。")
-        }
-        .alert("自动匹配", isPresented: Binding(get: { autoMatchNote != nil }, set: { if !$0 { autoMatchNote = nil } })) {
-            Button("好") {}
-        } message: {
-            Text(autoMatchNote ?? "")
-        }
     }
 
     /// 素材区「自动匹配」（嵌着时由二级页面右栏的按钮触发，见 `autoMatchTrigger`）
@@ -5582,6 +5551,7 @@ struct EditPromptSheet: View {
         var parts: [String] = []
         if report.withoutImage > 0 { parts.append("\(report.withoutImage) 个名字还没有图，没有挂（先提取、出图）") }
         if report.notInHeadLine > 0 { parts.append("\(report.notInHeadLine) 个在分镜头行里找不到名字") }
+        if let skips = app.voiceSyncSkips[shot.id] { parts.append("音色没挂上（\(skips.joined(separator: "；"))）") }
         if !parts.isEmpty {
             autoMatchNote = "已挂上 \(report.applied) 个素材；" + parts.joined(separator: "；") + "。"
         } else if item.selections.isEmpty {

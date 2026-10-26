@@ -41,6 +41,9 @@ final class AppModel {
     /// 所有服务渠道（UserDefaults `"modelChannels"` 持久化；旧键不再读取、也不删除）
     private(set) var channels: [ModelChannel] = []
 
+    /// 音色没挂上的分镜：分镜 ID → 「周承山：渠道不收参考音频」（`syncShotVoices` 写，段落详情底下显示；不存盘）
+    var voiceSyncSkips: [UUID: [String]] = [:]
+
     /// 按模型名找渠道/模型（同名以先出现的为准）
     func channel(forModel name: String) -> (ModelChannel, ChannelModel)? {
         guard !name.isEmpty else { return nil }
@@ -437,9 +440,14 @@ final class AppModel {
         case editImagePrompt(itemID: UUID)
         case confirmDeleteShot(shotID: UUID)   // 分镜垃圾桶的删除确认（2026-09-17）
         case confirmDeleteImage(itemID: UUID)  // 图片卡片垃圾桶的删除确认
+        /// 生视频页单击分镜：打开和工作台同一个段落详情（2026-10-26 用户：生视频弹窗要和段落详情一样）
+        case segmentDetail(shotID: UUID)
     }
 
     var activeModal: AppModalKind?
+    /// 叠在段落详情上面的生图编辑弹窗（2026-10-26：生视频页打开的段落详情占着 `activeModal`，
+    /// 里面点「编辑这张卡」不能把它顶掉——叠一层，关掉就看到后面的详情，和工作台里一样）
+    var stackedImageEditorID: UUID?
 
     /// 生图侧「正在右栏查看的条目」——2026-09-27 从 `ImageGenPanel` 提上来：右栏改成
     /// **共享右侧栏**（挂在 RootView 层，切换生图/生视频不拆建），选中态就得放在页面之外。
@@ -1732,6 +1740,8 @@ final class AppModel {
 
         touchProject(shots[idx].projectKey)
         persistShots()
+        // 删的是图：它带的音色也跟着走（2026-10-26）。删的是音频本身不同步——不然刚摘掉的音色又被挂回去
+        if imageIndex != nil { syncShotVoices(shotID) }
     }
 
     /// 从提示词里删除 `prefix+N` 的 token（含紧跟的「是」），并把更大的编号整体前移一位。
@@ -2354,6 +2364,54 @@ final class AppModel {
         persistImageItems()
     }
 
+    /// 绑 / 解绑角色卡的音色音频（素材库里的一段音频；nil = 解绑）。编辑提示词弹窗右栏「音色」，改了马上存，不跟着弹窗回滚（2026-10-26）。
+    /// 绑上就切到「音频音色」（刚绑的当然是要用的）
+    func updateImageItemVoiceAudio(_ id: UUID, audioID: UUID?) {
+        guard let idx = imageItems.firstIndex(where: { $0.id == id }) else { return }
+        if let audioID, libraryItem(audioID)?.kind != .audio { return }
+        let mode: VoiceMode? = audioID == nil ? imageItems[idx].voiceMode : .audio
+        guard imageItems[idx].voiceAudioID != audioID || imageItems[idx].voiceMode != mode else { return }
+        imageItems[idx].voiceAudioID = audioID
+        imageItems[idx].voiceMode = mode
+        persistImageItems()
+        syncVoices(ofCard: id)
+    }
+
+    /// 选「文本音色 / 音频音色」（两边填的都留着）
+    func updateImageItemVoiceMode(_ id: UUID, mode: VoiceMode) {
+        guard let idx = imageItems.firstIndex(where: { $0.id == id }), imageItems[idx].voiceMode != mode else { return }
+        imageItems[idx].voiceMode = mode
+        persistImageItems()
+        syncVoices(ofCard: id)
+    }
+
+    /// 卡上的音色改了：挂着这张卡的图的分镜跟着更新（音频素材 +「【音色】」那行）
+    func syncVoices(ofCard cardID: UUID) {
+        guard let card = imageItems.first(where: { $0.id == cardID }) else { return }
+        let images = Set(library.filter { $0.imageGenItemID == cardID }.map(\.id))
+        guard !images.isEmpty else { return }
+        // 查表整理一次、最后存一次盘（主角用到上百段，原来每段各整理一遍、各存一次）
+        let context = VoiceSyncContext(app: self, projectKey: card.projectKey)
+        var changed = false
+        for shot in shots where shot.imageRefs.contains(where: { images.contains($0.libraryItemID) }) {
+            if syncShotVoices(shot.id, context: context) { changed = true }
+        }
+        if changed {
+            touchProject(card.projectKey)
+            persistShots()
+        }
+    }
+
+    /// 改角色卡的音色文字描述（空 = 不要）。没变就什么都不写
+    func updateImageItemVoiceText(_ id: UUID, text: String?) {
+        guard let idx = imageItems.firstIndex(where: { $0.id == id }) else { return }
+        let text = CardVoice.normalizedText(text)
+        guard imageItems[idx].voiceText != text else { return }
+        imageItems[idx].voiceText = text
+        persistImageItems()
+        syncVoices(ofCard: id)
+    }
+
     func updateImageItemType(_ id: UUID, type: ImageSubjectType?) {
         guard let idx = imageItems.firstIndex(where: { $0.id == id }) else { return }
         imageItems[idx].type = type
@@ -2929,7 +2987,10 @@ final class AppModel {
     }
 
 
-    func addLibraryFiles(_ urls: [URL]) {
+    /// 返回加进库的条目 ID（扩展名不认的文件跳过）
+    @discardableResult
+    func addLibraryFiles(_ urls: [URL]) -> [UUID] {
+        var added: [UUID] = []
         for url in urls {
             let ext = url.pathExtension.lowercased()
             let kind: LibraryItem.Kind
@@ -2945,6 +3006,7 @@ final class AppModel {
             let item = LibraryItem(kind: kind, localPath: url.path, fileName: url.lastPathComponent, projectKey: currentProjectKey)
             library.append(item)
             let itemID = item.id
+            added.append(itemID)
             if kind != .image {
                 // 异步探测音视频时长
                 Task {
@@ -2963,6 +3025,7 @@ final class AppModel {
         for item in library where item.uploadState == .pending {
             uploadLibraryItem(item.id)
         }
+        return added
     }
 
     /// 删除素材库条目：**只从库里移除 + 清理分镜内引用，磁盘上的文件一律不动**
@@ -3026,6 +3089,10 @@ final class AppModel {
             prompt = Self.stripDanglingTokens(prompt, prefix: "图", maxCount: imageItems[i].imageRefs.count)
             imageItems[i].prompt = prompt
             cleanedItems += 1
+        }
+        // 角色卡绑的音色就是这段音频：解绑（文字描述留着）
+        for i in imageItems.indices where imageItems[i].voiceAudioID == id {
+            imageItems[i].voiceAudioID = nil
         }
 
         // 只留一条汇总日志：这是个"会改用户提示词"的操作，真出问题时能对上时间
@@ -3099,6 +3166,13 @@ final class AppModel {
     /// `detectsDuration`：false = 不按 `[X-Y 秒]` 改分镜时长（制作页的时长由参数栏管）。
     @discardableResult
     func autoMatchMaterials(_ shotID: UUID, candidates pool: [LibraryItem]? = nil, detectsDuration: Bool = true) -> Int {
+        let matched = matchMaterialsByName(shotID, candidates: pool, detectsDuration: detectsDuration)
+        // 挂着的角色图带上它们的音色（2026-10-26，见 `ShotVoiceSync`）：没挂上新图也要跑（卡上刚绑了音色、换了版本）
+        syncShotVoices(shotID)
+        return matched
+    }
+
+    private func matchMaterialsByName(_ shotID: UUID, candidates pool: [LibraryItem]?, detectsDuration: Bool) -> Int {
         guard let idx = shots.firstIndex(where: { $0.id == shotID }) else { return 0 }
         let shot = shots[idx]
         let prompt = shot.prompt
@@ -3281,7 +3355,12 @@ final class AppModel {
         } + restores.map { ($0.range.lowerBound.utf16Offset(in: prompt), $0.token) })
             .sorted { $0.offset > $1.offset }
         for insertion in insertions {
-            ns.insert(insertion.token, at: insertion.offset)
+            // 名字前面留着一个「@」（在提示词框里打了 @ 没选就关掉，2026-10-26 用户实测）：补「图N」时把它换掉，不留「@图2周承山」
+            if insertion.offset > 0, ["@", "＠"].contains(ns.substring(with: NSRange(location: insertion.offset - 1, length: 1))) {
+                ns.replaceCharacters(in: NSRange(location: insertion.offset - 1, length: 1), with: insertion.token)
+            } else {
+                ns.insert(insertion.token, at: insertion.offset)
+            }
         }
         let newPrompt = ns as String
 

@@ -336,7 +336,9 @@ private struct ProjectBuilder {
                                                    submittedAt: item.submittedAt, paramsDirty: item.paramsDirty,
                                                    stage: item.stage, fromEpisode: item.fromEpisode,
                                                    referenceCardID: item.referenceCardID,
-                                                   failures: item.failures.isEmpty ? nil : item.failures)
+                                                   failures: item.failures.isEmpty ? nil : item.failures,
+                                                   voiceAudioID: item.voiceAudioID, voiceText: item.voiceText,
+                                                   voiceMode: item.voiceMode)
                 settings[s].legacy = legacy
             }
             settings[s].imageModel = item.model

@@ -2,7 +2,8 @@ import XCTest
 import SwiftUI
 @testable import Xipixiaojuchang
 
-/// 分段弹窗「本段素材」的一行（2026-10-12 用户定）：点缩略图 = 看大图；点这一行别处 = 这张卡的编辑提示词
+/// 分段弹窗「本段素材」的一行：点整张卡（缩略图也算）= 这张卡的编辑提示词（2026-10-26 用户：看大图去提示词弹窗里点图；
+/// 原来 2026-10-12 定的「点缩略图 = 看大图」去掉了）
 @MainActor
 final class WorkbenchMaterialRowClickTests: XCTestCase {
     // 2026-10-16 起本段素材只在「本段预览」下面（没视频时默认是「本段剧情」）
@@ -18,7 +19,7 @@ final class WorkbenchMaterialRowClickTests: XCTestCase {
         }
     }
 
-    func testClickingTheThumbnailShowsTheBigImage() throws {
+    func testClickingTheThumbnailNoLongerShowsTheBigImage() throws {
         let app = AppModel()
         let key = "matrow-" + UUID().uuidString
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("matrow-\(UUID().uuidString).png")
@@ -51,7 +52,7 @@ final class WorkbenchMaterialRowClickTests: XCTestCase {
         // 位置按这个窗口尺寸下的布局量的：右下「本段素材」（角色标签）第一张卡的缩略图（2026-10-15 新布局）
         click(window, x: 767, yFromTop: 521)
         RunLoop.main.run(until: Date().addingTimeInterval(0.4))
-        XCTAssertEqual(app.previewingImageItemID, card.id, "点缩略图 = 看大图")
-        // ⚠️ 「点这一行别处 = 编辑提示词」「点缩略图时整行不跟着响应」都测不了：那是 onTapGesture，sendEvent 模拟的点击触发不了（见 WorkbenchSegmentPlayButtonTests）
+        XCTAssertNil(app.previewingImageItemID, "点缩略图不再单独看大图")
+        // ⚠️ 「点整张卡 = 编辑提示词」测不了：那是 onTapGesture，sendEvent 模拟的点击触发不了（见 WorkbenchSegmentPlayButtonTests）
     }
 }

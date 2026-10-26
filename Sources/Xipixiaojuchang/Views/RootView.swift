@@ -1098,7 +1098,7 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            WorkspacePanelColumn(hasImages: state.hasImages, hasVideo: state.hasVideo)
+            // 右侧详情栏已去掉（2026-10-26 用户：生图 / 生视频都改成单击缩略图开编辑弹窗，信息都在弹窗里）
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .overlay(alignment: .bottom) {
@@ -1114,143 +1114,6 @@ struct RootView: View {
     /// 生图页（同上：存成属性，切模式不重算）
     private let imageWorkspace = ImageWorkspaceView()
 }
-
-// MARK: - 右栏列（2026-09-27 独立成子视图，断掉"页壳每秒重算 → 连累面板"的链）
-
-/// **共享右侧栏列**：只读"当前页有没有内容 + 显示哪边"，
-/// 两个 Pane 随实际访问创建；隐藏后保留上次的内容与栏宽。
-private struct WorkspacePanelColumn: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.mediaWorkspaceContext) private var context
-    let hasImages: Bool
-    let hasVideo: Bool
-    @State private var hasItems = MediaWorkspaceInput<Bool>()
-
-    private var mode: AppModel.WorkspaceMode { context?.mode ?? app.workspaceMode }
-
-    var body: some View {
-        if currentPageHasItems {
-            ZStack {
-                if hasImages {
-                    ImageInspectorPane()
-                        .opacity(mode == .image ? 1 : 0)
-                        .allowsHitTesting(mode == .image)
-                }
-                if hasVideo {
-                    VideoInspectorPane()
-                        .opacity(mode == .video ? 1 : 0)
-                        .allowsHitTesting(mode == .video)
-                }
-            }
-            .frame(width: 400)
-            .frame(maxHeight: .infinity)
-            .onAppear { app.inspectorKind = mode == .video ? .video : .image }
-            .onChange(of: mode) { _, mode in
-                app.inspectorKind = mode == .video ? .video : .image
-            }
-        }
-    }
-
-    private var currentPageHasItems: Bool {
-        hasItems.value(active: context?.active ?? true) {
-            mode == .video ? !app.currentShots.isEmpty : !app.currentImageItems.isEmpty
-        }
-    }
-}
-
-/// 生图侧面板（常驻；显示"右栏正在看的条目"）
-private struct ImageInspectorPane: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.mediaWorkspaceContext) private var context
-    @State private var input = MediaWorkspaceInput<ImageGenItem?>()
-    /// 历史版本横向列表的可视锚点（原来在 `ImageGenPanel` 里，随右栏搬过来，2026-09-27）
-    @State private var historyVisibleIDs: [UUID: UUID] = [:]
-
-    var body: some View {
-        if let item = inspectedItem {
-            ImageItemInspector(
-                item: item,
-                selectedResultID: resultBinding(for: item),
-                historyScrollAnchorID: historyBinding(for: item)
-            )
-        } else {
-            Color.clear
-        }
-    }
-
-    /// 右栏显示的图片条目：优先 id 命中的；无效 / 空 → 退回第一条（同工具条里的参数，见 `AppModel.inspectedImageItem`）
-    private var inspectedItem: ImageGenItem? {
-        input.value(active: context?.isActive(.image) ?? true) { app.inspectedImageItem }
-    }
-
-    /// 历史版本选中（同原 `ImageGenPanel.selectedImageResultBinding`）
-    private func resultBinding(for item: ImageGenItem) -> Binding<UUID?> {
-        Binding(
-            get: {
-                if let context, !context.isActive(.image) {
-                    return item.selectedResultID ?? item.latestResult?.id
-                }
-                guard let liveItem = app.imageItems.first(where: { $0.id == item.id }) else {
-                    return item.latestResult?.id
-                }
-                if let selectedID = liveItem.selectedResultID,
-                   liveItem.results.contains(where: { $0.id == selectedID }) {
-                    return selectedID
-                }
-                return liveItem.latestResult?.id
-            },
-            set: { app.applyImageResult(item.id, resultID: $0) }
-        )
-    }
-
-    private func historyBinding(for item: ImageGenItem) -> Binding<UUID?> {
-        Binding(
-            get: { historyVisibleIDs[item.id] },
-            set: { historyVisibleIDs[item.id] = $0 }
-        )
-    }
-}
-
-/// 视频侧面板（常驻；显示"右栏正在看的分镜"）——播放开关 + 停播规则都在这里（2026-09-27）
-private struct VideoInspectorPane: View {
-    @Environment(AppModel.self) private var app
-    @Environment(\.mediaWorkspaceContext) private var context
-    @State private var input = MediaWorkspaceInput<(shot: ShotDraft?, index: Int)>()
-
-    private var displayed: (shot: ShotDraft?, index: Int) {
-        input.value(active: context?.isActive(.video) ?? true) {
-            let shot = app.inspectedShot
-            return (shot, shot.flatMap { s in app.currentShots.firstIndex(where: { $0.id == s.id }) } ?? 0)
-        }
-    }
-    /// 播放开关（原来在 GenerateView 里，随右栏搬过来）
-    @State private var playing = false
-
-    var body: some View {
-        if let shot = displayed.shot {
-            ShotInspectorPanel(
-                shot: Binding(
-                    get: {
-                        if let context, !context.isActive(.video) { return shot }
-                        return app.shotBinding(shot.id).wrappedValue
-                    },
-                    set: { app.shotBinding(shot.id).wrappedValue = $0 }
-                ),
-                index: displayed.index,
-                isPlaying: $playing
-            )
-            // 换选中分镜 / 切项目 → 停播
-            .onChange(of: app.timelineShotID) { _, _ in playing = false }
-            .onChange(of: context?.projectKey ?? app.currentProjectKey) { _, _ in playing = false }
-            .onChange(of: app.projectPage) { _, page in
-                if page != .production { playing = false }
-            }
-        } else {
-            Color.clear
-        }
-    }
-}
-
 
 /// 窗口毛玻璃底（AppKit 的 `NSVisualEffectView`，Finder 侧栏 / 系统设置用的就是它）。
 ///
@@ -1459,6 +1322,8 @@ private struct RootModals: ViewModifier {
 
     /// Esc 统一路由的监听句柄（全 App 只装这一个，见 `installEscRouter`）
     @State private var escRouter: Any?
+    /// 窗口内容区大小（段落详情的尺寸按它算）
+    @State private var windowSize: CGSize = CGSize(width: 1275, height: 796)
 
     /// `activeModal != nil` ↔ 浮层显示。点遮罩关闭时写回 nil。
     private var isPresented: Binding<Bool> {
@@ -1468,11 +1333,20 @@ private struct RootModals: ViewModifier {
         )
     }
 
+    private var stackedPresented: Binding<Bool> {
+        Binding(get: { app.stackedImageEditorID != nil }, set: { if !$0 { app.stackedImageEditorID = nil } })
+    }
+
     /// 各浮层的尺寸（nil = 由内容撑）
     private var size: (width: CGFloat?, height: CGFloat?) {
         switch app.activeModal {
         case .settings:                                  return (860, 610)
-        case .editVideoPrompt, .editImagePrompt:         return (AppWindowShellLayout.promptModalWidth, nil)
+        case .editVideoPrompt:                           return (AppWindowShellLayout.promptModalWidth, nil)
+        // 生图的编辑提示词 2026-10-26 改成两栏：宽度由内容定（最宽 1000，窗口窄了跟着缩，见 `EditImagePromptSheet`）
+        case .editImagePrompt:                           return (nil, nil)
+        // 段落详情：和工作台里点开的同一个算法（见 `PipelinePage.segmentDetailSize`）
+        case .segmentDetail:
+            return (max(min(windowSize.width - 72, 1440), 600), max(windowSize.height - 56, 480))
         default:                                         return (nil, nil)
         }
     }
@@ -1499,6 +1373,19 @@ private struct RootModals: ViewModifier {
             } else if app.showTaskDrawer {
                 AppLog.write("modal", "Esc 关闭（任务抽屉）")
                 app.toggleTaskDrawer()
+            } else if app.activeModal != nil, app.previewingImageItemID != nil || app.previewingShotID != nil {
+                // 编辑弹窗里点图 / 视频全屏开的大预览浮在弹窗上面：先关大预览，弹窗留着（2026-10-26）
+                AppLog.write("modal", "Esc 关闭（弹窗上的大预览）")
+                app.previewingImageItemID = nil
+                app.previewingImageResultID = nil
+                app.previewingShotID = nil
+            } else if app.stackedImageEditorID != nil {
+                AppLog.write("modal", "Esc 关闭（段落详情上的生图弹窗）")
+                app.stackedImageEditorID = nil
+            } else if case .segmentDetail? = app.activeModal,
+                      let textView = NSApp.keyWindow?.firstResponder as? NSTextView, textView.isEditable {
+                // 段落详情里正在改剧情 / 提示词：这一下只放手（存盘），再按一次才关（同工作台里的段落详情）
+                NSApp.keyWindow?.makeFirstResponder(nil)
             } else if app.activeModal != nil {
                 AppLog.write("modal", "Esc 关闭")
                 app.activeModal = nil
@@ -1521,6 +1408,8 @@ private struct RootModals: ViewModifier {
 
     func body(content: Content) -> some View {
         return content
+            // 窗口内容区大小：段落详情按它定尺寸（和工作台里点开的一样大）
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
             // Esc 由下面的路由统一处理，两层浮层都关掉自带的监听
             .appModal(isPresented: isPresented, width: size.width, height: size.height, handlesEsc: false) {
                 switch app.activeModal {
@@ -1539,6 +1428,9 @@ private struct RootModals: ViewModifier {
                     if let shot = app.shots.first(where: { $0.id == shotID }) {
                         EditPromptSheet(shot: shot, onClose: close)
                     }
+
+                case .segmentDetail(let shotID):
+                    ShotSegmentDetailModal(shotID: shotID, onClose: close)
 
                 case .batchParse:
                     BatchImageParseView(onClose: close)
@@ -1561,11 +1453,19 @@ private struct RootModals: ViewModifier {
                     EmptyView()
                 }
             }
+            // 叠在段落详情上面的生图弹窗（生视频页打开的段落详情里点「编辑这张卡」，2026-10-26）
+            .appModal(isPresented: stackedPresented, handlesEsc: false) {
+                if let id = app.stackedImageEditorID, let item = app.imageItems.first(where: { $0.id == id }) {
+                    EditImagePromptSheet(item: item, onClose: { app.stackedImageEditorID = nil })
+                }
+            }
             // **归因日志**：把"弹窗开/关"的时刻写进同一份 app.log，
             // 这样看门狗记下的卡顿时间戳就能对上"当时在做什么"——
             // 否则只知道卡了、不知道因谁而起。排查开关路径的 bug 时也靠它。
             // 开销可忽略（每次开关各一条），留着。
             .onChange(of: app.activeModal) { old, kind in
+                // 主浮层关了：叠在上面的生图弹窗也一起关
+                if kind == nil, app.stackedImageEditorID != nil { app.stackedImageEditorID = nil }
                 if let kind {
                     AppLog.write("modal", "\(Self.name(of: kind)) 打开")
                 } else {
@@ -1637,6 +1537,7 @@ private struct RootModals: ViewModifier {
         case .editImagePrompt:   return "编辑图片提示词"
         case .confirmDeleteShot: return "删除分镜确认"
         case .confirmDeleteImage: return "删除图片确认"
+        case .segmentDetail:     return "段落详情"
         }
     }
 }

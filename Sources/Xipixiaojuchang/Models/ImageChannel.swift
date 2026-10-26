@@ -190,6 +190,11 @@ enum ImageVersionEntry: Identifiable, Equatable {
     var failure: ImageGenFailure? { if case .failure(let f, _) = self { f } else { nil } }
 }
 
+/// 角色卡音色用哪一种（编辑提示词弹窗「文本音色 / 音频音色」二选一；两边填的都留着）
+enum VoiceMode: String, Codable, Sendable {
+    case text, audio
+}
+
 /// 图片生成条目（批量解析产物，一条对应一张图；重新生成追加版本不覆盖；按项目隔离）
 struct ImageGenItem: Identifiable, Codable, Equatable, Sendable {
     var id: UUID
@@ -227,6 +232,12 @@ struct ImageGenItem: Identifiable, Codable, Equatable, Sendable {
     var failures: [ImageGenFailure] = []
     /// 正在看的那一次失败（点了历史版本里失败的那一版）；nil = 看 `selectedResultID` / 最新的图。不存盘
     var viewingFailureID: UUID? = nil
+    /// **音色**（2026-10-26 用户：音色和参考图一样绑在这个形象上，给生视频「全能参考」用）：素材库里的一段音频 / 一句文字描述，
+    /// `voiceMode` 选用哪一种（nil = 有音频用音频，否则用文字）。每张卡只管自己的，**不沿用别的卡**（四十岁 / 少年是另外的形象，各绑各的）。
+    /// 只给生视频用，**不传给生图模型**；换版本、重新生图都不动它。见 `CardVoice`
+    var voiceAudioID: UUID? = nil
+    var voiceText: String? = nil
+    var voiceMode: VoiceMode? = nil
 
     init(id: UUID = UUID(),
          projectKey: String = "",
@@ -286,6 +297,7 @@ extension ImageGenItem {
         case referenceCardID
         case stage, fromEpisode
         case failures
+        case voiceAudioID, voiceText, voiceMode
     }
 
     init(from decoder: Decoder) throws {
@@ -311,6 +323,9 @@ extension ImageGenItem {
         stage = try c.decodeIfPresent(String.self, forKey: .stage)
         fromEpisode = try c.decodeIfPresent(Int.self, forKey: .fromEpisode)
         failures = try c.decodeIfPresent([ImageGenFailure].self, forKey: .failures) ?? []
+        voiceAudioID = try c.decodeIfPresent(UUID.self, forKey: .voiceAudioID)
+        voiceText = try c.decodeIfPresent(String.self, forKey: .voiceText)
+        voiceMode = try c.decodeIfPresent(VoiceMode.self, forKey: .voiceMode)
         // 旧卡：名字里的「第N集的」前缀拆成起始集（格式固定，拆得准；2026-10-14 名字与形态分离）
         CardVersion.splitLegacyPrefix(&self)
     }

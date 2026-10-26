@@ -91,6 +91,9 @@ enum LegacyProjection {
                 item.fromEpisode = card.fromEpisode
                 item.referenceCardID = card.referenceCardID
                 item.failures = card.failures ?? []
+                item.voiceAudioID = card.voiceAudioID
+                item.voiceText = card.voiceText
+                item.voiceMode = card.voiceMode
                 // 旧卡名字里的「第N集的」拆成起始集（存盘时起始集一起存，见 `LegacyImageCard.fromEpisode`）
                 CardVersion.splitLegacyPrefix(&item)
                 out.imageItems.append(item)

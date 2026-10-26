@@ -103,6 +103,9 @@ extension AppModel {
             savePipelineArchive(archive, for: key)
         }
         workbenchLocations[key] = .init(projectKey: key, episodeIndex: episodeIndex, segment: segment)
+        // 从生视频页打开的段落详情（和叠在上面的生图弹窗）里跳过来的：一起关掉，工作台自己打开这一段
+        stackedImageEditorID = nil
+        if case .segmentDetail? = activeModal { activeModal = nil }
         openScriptPage()
     }
 }

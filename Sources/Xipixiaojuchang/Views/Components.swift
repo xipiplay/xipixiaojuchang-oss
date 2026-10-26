@@ -2285,6 +2285,16 @@ struct ReadonlyPromptText: View {
                 .aspectRatio(contentMode: .fill)
                 .frame(width: 32, height: 18)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+                // 绑了音色的角色图：右下角小喇叭（和编辑框里的 `SlotAttachment` 一样，2026-10-26）
+                .overlay(alignment: .bottomTrailing) {
+                    if slots.first(where: { $0.token == token })?.hasVoice == true {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 6.5, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 11, height: 11)
+                            .background(Circle().fill(Color.black.opacity(0.65)))
+                    }
+                }
         } else {
             Text(token)
                 .font(.system(size: 14))

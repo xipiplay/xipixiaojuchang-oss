@@ -468,11 +468,16 @@ private struct DetailBody: View {
         let library = { (id: UUID) in index[id] }
         return status.names.map { name in
             let attached = WorkbenchVersions.attachedCardID(kind: name.kind, name: name.name, shot: shot, cards: cards, app: app, library: library)
+            let selectedID = choices[name.name] ?? attached
+                ?? WorkbenchVersions.currentCardID(kind: name.kind, name: name.name, shot: shot, episode: episodeIndex + 1, cards: cards, app: app, library: library)
+            // 选中的这张角色卡绑了音色：名字旁边一个小喇叭
+            let hasVoice = selectedID.flatMap { id in cards.first { $0.id == id } }
+                .flatMap { CardVoice.resolve($0, library: library) } != nil
             return DetailRowInfo(name: name,
                     versions: WorkbenchVersions.versions(kind: name.kind, name: name.name, cards: cards),
-                    selectedID: choices[name.name] ?? attached
-                        ?? WorkbenchVersions.currentCardID(kind: name.kind, name: name.name, shot: shot, episode: episodeIndex + 1, cards: cards, app: app, library: library),
-                    attachedID: attached)
+                    selectedID: selectedID,
+                    attachedID: attached,
+                    hasVoice: hasVoice)
         }
     }
 
@@ -534,6 +539,14 @@ private struct DetailBody: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .opacity(shot == nil ? 0 : 1)
+            // 角色音色没挂上（渠道不收参考音频 / 关了生成音频 / 已经 3 段）：说清楚，不悄悄丢（2026-10-26，见 `ShotVoiceSync`）
+            if let shot, let skips = app.voiceSyncSkips[shot.id] {
+                Label("音色没挂上：\(skips.joined(separator: "；"))", systemImage: "speaker.slash")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(Theme.warning)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -648,9 +661,19 @@ private struct DetailBody: View {
                                 prepareApply(self.rows.filter { $0.name.name == row.name.name })
                             },
                             onRemove: { removalName = row.name.name },
-                            onOpenCard: { app.workbenchOpenImageCard($0, from: jumpOrigin) },
-                            onPreviewCard: { app.workbenchPreviewImageCard($0) },
-                            onEditCard: { app.activeModal = .editImagePrompt(itemID: $0) })
+                            onOpenCard: { id in
+                                // 生视频页打开的段落详情是浮层：跳去生图页前先关掉，不然它盖在生图页上
+                                if case .segmentDetail? = app.activeModal { app.activeModal = nil }
+                                app.workbenchOpenImageCard(id, from: jumpOrigin)
+                            },
+                            onEditCard: { id in
+                                // 生视频页打开的段落详情本身就占着主浮层：生图弹窗叠在它上面（2026-10-26）
+                                if case .segmentDetail? = app.activeModal {
+                                    app.stackedImageEditorID = id
+                                } else {
+                                    app.activeModal = .editImagePrompt(itemID: id)
+                                }
+                            })
                     }
                 }
             }
@@ -977,35 +1000,13 @@ private struct RowTap: ViewModifier {
     }
 }
 
-/// 素材行的缩略图：点一下看大图，悬停微微提亮、手形
-private struct ThumbPreviewButton: View {
-    let info: DetailRowInfo
-    var size = CGSize(width: 72, height: 40.5)
-    let action: () -> Void
-    @State private var hovered = false
-
-    var body: some View {
-        Button(action: action) {
-            MaterialThumb(path: info.selected?.imagePath, kindIcon: info.name.kind.icon, size: size)
-                .brightness(hovered ? 0.06 : 0)
-                .animation(.easeOut(duration: 0.12), value: hovered)
-        }
-        .buttonStyle(QuietButtonStyle(hover: .none))
-        .onHover { hovered = $0 }
-        .pointerStyle(.link)
-        .help("看大图")
-        .accessibilityIdentifier("workbench-material-thumb-\(info.name.name)")
-    }
-}
-
 /// 本段素材的一张小卡（2026-10-15 新布局：一类一个标签、两列排）：缩略图 + 名字 + 选中的版本（有例外标状态）。
-/// 「更换」「···」鼠标移上去才出来（菜单开着时不收）；点缩略图看大图，点卡片别处编辑这张卡的提示词
+/// 「更换」「···」鼠标移上去才出来（菜单开着时不收）；点整张卡（缩略图也算）编辑这张卡的提示词——看大图在提示词弹窗里点图（2026-10-26 用户）
 private struct CompactMaterialCard: View {
     let info: DetailRowInfo
     let onChoose: (UUID) -> Void
     let onRemove: () -> Void
     let onOpenCard: (UUID) -> Void
-    let onPreviewCard: (UUID) -> Void
     let onEditCard: (UUID) -> Void
 
     @State private var hovered = false
@@ -1014,17 +1015,20 @@ private struct CompactMaterialCard: View {
 
     var body: some View {
         let status = materialStatus(info)
-        let canPreview = info.selected?.hasImage == true
         let thumbSize = CGSize(width: 64, height: 36)
         let showsActions = hovered || showVersions || showMenu
         HStack(spacing: 8) {
-            if canPreview, let id = info.selectedID {
-                ThumbPreviewButton(info: info, size: thumbSize) { onPreviewCard(id) }
-            } else {
-                MaterialThumb(path: info.selected?.imagePath, kindIcon: info.name.kind.icon, size: thumbSize)
-            }
+            MaterialThumb(path: info.selected?.imagePath, kindIcon: info.name.kind.icon, size: thumbSize)
             VStack(alignment: .leading, spacing: 2) {
-                Text(info.name.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(info.name.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    if info.hasVoice {
+                        Image(systemName: "speaker.wave.2")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.accent)
+                            .help("这张卡绑了音色")
+                    }
+                }
                 HStack(spacing: 4) {
                     if status.isException {
                         Circle().fill(Theme.warning).frame(width: 5, height: 5)
@@ -1075,6 +1079,8 @@ private struct DetailRowInfo: Identifiable {
     var selected: WorkbenchVersions.Version? { versions.first { $0.cardID == selectedID } }
     /// 有图可挂、但现在挂着的不是选中的这个（没挂、或挂的是别的版本）
     var pending: Bool { name.state == .ready && selectedID != attachedID }
+    /// 选中的卡绑了音色（`CardVoice`）
+    var hasVoice = false
 }
 
 /// 右栏标题右边的「添加素材」：弹出一个小表单，先在生图页已有的卡里搜、点一下就加；没有的名字直接输入回车
@@ -1242,5 +1248,40 @@ private struct RerunForm: View {
         }
         .padding(16)
         .frame(width: 340)
+    }
+}
+
+/// 生视频页单击分镜打开的段落详情（2026-10-26 用户：要和工作台里点开的一模一样）。
+/// 就是 `WorkbenchSegmentDetail` 本身：属于某一集的打开那一集那一段；不属于任何一集的走「其他分镜」。上一段 / 下一段在弹窗里翻
+struct ShotSegmentDetailModal: View {
+    @Environment(AppModel.self) private var app
+    let shotID: UUID
+    let onClose: () -> Void
+    /// 翻到别的段以后在哪（nil = 还在点开的那一段）
+    @State private var spot: WorkbenchSegmentGrid.Spot?
+
+    var body: some View {
+        WorkbenchBoardReader { board in
+            if let current = spot ?? Self.spot(of: shotID, archive: app.currentPipelineArchive, board: board) {
+                WorkbenchSegmentDetail(episodeIndex: current.episode, segmentNumber: current.segment,
+                                       onSelect: { next in
+                                           if let next { spot = next } else { onClose() }
+                                       })
+            } else {
+                Text("找不到这条分镜").font(.system(size: 13)).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    /// 这条分镜在哪：某一集里配对的第几段；不在任何一集里 =「其他分镜」里的第几个
+    static func spot(of shotID: UUID, archive: ProjectPipelineArchive?, board: WorkbenchStatus.Board?) -> WorkbenchSegmentGrid.Spot? {
+        if let archive {
+            for (index, episode) in archive.episodes.enumerated() {
+                if let i = episode.pairedShotIDs.firstIndex(of: shotID) { return .init(episode: index, segment: i + 1) }
+            }
+        }
+        if let i = board?.otherShotIDs.firstIndex(of: shotID) { return .init(episode: WorkbenchSegmentGrid.otherEpisode, segment: i + 1) }
+        return nil
     }
 }
