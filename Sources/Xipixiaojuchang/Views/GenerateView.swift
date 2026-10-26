@@ -74,6 +74,8 @@ struct GenerateView: View {
 
     /// 缩略图页顶部：状态筛选（2026-09-26 与生图侧统一：点一下筛、再点取消）+ 名称搜索
     @State private var shotThumbStatusFilter: ShotThumbStatusFilter = .all
+    /// 「按范围选」的小框（2026-10-27）
+    @State private var showShotRange = false
     @State private var shotThumbSearchText = ""
     /// 缩略图网格可用宽度（只跟窗口尺寸变）——🧪 **实验 6b（2026-09-27）**：算固定列宽用。
     @State private var shotThumbGridWidth: CGFloat = 0
@@ -836,6 +838,45 @@ struct GenerateView: View {
                     app.selectedShotIDs = Set(shotThumbFilteredShots.map(\.id))
                 }
             }
+            shotRangeButton
+        }
+    }
+
+    /// 「按范围选」（2026-10-27 用户：批量提交时要能一次选第几集到第几集、或者先选多少个）。
+    /// 没选中时在状态筛选后面，选中后在「已选 N + 全选」后面；选了就**替换**现在的选择（同拖框）
+    private var shotRangeButton: some View {
+        Button {
+            shotThumbSearchFocused = false
+            DropdownPanel.shared.dismiss()
+            showShotRange = true
+        } label: {
+            Label("按范围选", systemImage: "checklist")
+                .font(.callout)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(Capsule().fill(Color.secondary.opacity(0.1)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(QuietButtonStyle(hover: .capsule))
+        .disabled(shotThumbFilteredShots.isEmpty)
+        .dropdownPopover(isPresented: $showShotRange) {
+            ShotRangePanel(episodeCount: app.currentPipelineArchive?.episodes.count ?? 0,
+                           count: { rangePick($0).count },
+                           onPick: { app.selectedShotIDs = Set(rangePick($0)) },
+                           onClose: { DropdownPanel.shared.dismiss() })
+        }
+        .accessibilityIdentifier("shot-range")
+    }
+
+    /// 按范围选出的分镜（在看得见的里面、按显示顺序）
+    private func rangePick(_ options: ShotRangeSelection.Options) -> [UUID] {
+        let episodes = ShotRangeSelection.episodeIndex(app.currentPipelineArchive)
+        return ShotRangeSelection.pick(shotThumbFilteredShots, options: options, episodeOf: { episodes[$0] }) { shot in
+            if app.submittingShotIDs.contains(shot.id) { return true }
+            switch shotThumbPhase(of: shot) {
+            case .completed, .queued, .inProgress: return true
+            default: return false
+            }
         }
     }
 
@@ -1010,6 +1051,11 @@ struct GenerateView: View {
                               ? "显示全部分镜"
                               : (shotThumbStatusFilter == f ? "取消状态筛选" : "只看「\(f.displayName)」"))
                     }
+                    Rectangle()
+                        .fill(Color.secondary.opacity(0.35))
+                        .frame(width: 1, height: 18)
+                        .padding(.horizontal, 8)
+                    shotRangeButton
                 }
             } else {
                 // 选中模式：筛选区换成「已选 N + 全选」（同生图侧）
