@@ -13,8 +13,8 @@ https://github.com/user-attachments/assets/a47bf840-6f4b-4464-ade7-03aff6a31951
 | 段落详情：分镜提示词 + 本段剧情 | 素材卡：角色 / 场景 / 道具 |
 |---|---|
 | ![段落详情](docs/screenshots/segment-detail.png) | ![素材卡](docs/screenshots/image-cards.png) |
-
-![主页](docs/screenshots/home.png)
+| **素材卡编辑：提示词、历史版本、绑定音色** | **主页** |
+| ![素材卡编辑](docs/screenshots/image-editor.png) | ![主页](docs/screenshots/home.png) |
 
 > 截图来自作者用本软件制作的短剧《六十块的车神》等项目。
 
@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/a47bf840-6f4b-4464-ade7-03aff6a31951
 
 - **剧本流水线**：AI 分集 → 时长分割（如每段 15 / 30 秒）→ 分段命名 → 推理分镜 → 提取素材（角色、场景、道具）。每一步的提示词都能在设置里改。
 - **工作台**：按集、按段看每一段走到了哪一步（待命名、待推理、待出图、待生成视频……），点进某一段可以改提示词、挂素材、看历史版本。
-- **素材与生图**：提取出的素材自动建成生图卡；跨集复用同一素材，提取时会和已有素材对账（沿用 / 新建 / 形态变化 / 待确认），不会重复建卡。
+- **素材与生图**：提取出的素材自动建成生图卡；跨集复用同一素材，提取时会和已有素材对账（沿用 / 新建 / 形态变化 / 待确认），不会重复建卡。单击素材卡就是编辑弹窗：提示词、历史版本、用到它的分段都在里面；角色卡还能绑音色（一段音频或一句文字描述），挂到分镜上时音色跟着进分镜提示词（参考音频要视频渠道支持；开源版自带的 OpenAI / New API 两种渠道不收参考音频，只用文字描述）。
 - **生视频**：每一段带着挂好的参考图（以及参考视频、音频）提交给视频服务商；每次提交都是新的一版，失败的版本也保留，可以改了再交。
 - **服务商接入**：生图、生视频渠道支持 OpenAI 规范和 New API 两种接入规范；文字流程可接 OpenAI 兼容的接口（如 DeepSeek），支持流式接收。
 - **外部智能体接力**：文字流程可以不走软件里的 API，而是把请求放进本机收件目录，由 Codex 等外部智能体回答。配套的自动化技能在 [`skills/xipi-automation`](skills/xipi-automation)。
@@ -106,7 +106,7 @@ swift test
 
 - **Script pipeline**: split the script into episodes → cut each episode into fixed-length segments (e.g. 15 / 30 s) → name segments → infer storyboards → extract assets (characters, scenes, props). Every step's prompt is editable.
 - **Workbench**: see where each segment stands (needs naming, needs storyboard, needs images, needs video…), open a segment to edit its prompt, attach assets, and browse version history.
-- **Assets & images**: extracted assets become image cards; assets are reused across episodes and reconciled on re-extraction (reuse / new / changed form / needs review) instead of being duplicated.
+- **Assets & images**: extracted assets become image cards; assets are reused across episodes and reconciled on re-extraction (reuse / new / changed form / needs review) instead of being duplicated. Clicking a card opens its editor (prompt, version history, where it's used); character cards can carry a voice (an audio clip or a text description) that follows the character into storyboard prompts (reference audio needs a video channel that accepts it; the bundled OpenAI / New API channels don't, so only the text description is used).
 - **Video generation**: each segment is submitted with its reference images (and optional reference video / audio). Every submission is a new version; failed versions are kept and can be edited and resubmitted.
 - **Providers**: image and video channels speak either the OpenAI-style protocol or the New API protocol; text steps work with OpenAI-compatible endpoints (e.g. DeepSeek), with streaming.
 - **External agent bridge**: instead of calling an API, text-pipeline requests can be dropped into a local inbox and answered by an external coding agent such as Codex. See [`skills/xipi-automation`](skills/xipi-automation).
