@@ -1344,9 +1344,10 @@ private struct RootModals: ViewModifier {
         case .editVideoPrompt:                           return (AppWindowShellLayout.promptModalWidth, nil)
         // 生图的编辑提示词 2026-10-26 改成两栏：宽度由内容定（最宽 1000，窗口窄了跟着缩，见 `EditImagePromptSheet`）
         case .editImagePrompt:                           return (nil, nil)
-        // 段落详情：和工作台里点开的同一个算法（见 `PipelinePage.segmentDetailSize`）
+        // 段落详情：和工作台里点开的同一个大小（见 `PipelinePage.segmentDetailSize`）
         case .segmentDetail:
-            return (max(min(windowSize.width - 72, 1440), 600), max(windowSize.height - 56, 480))
+            let detail = PipelinePage.segmentDetailSize(in: windowSize)
+            return (detail.width, detail.height)
         default:                                         return (nil, nil)
         }
     }
@@ -1410,6 +1411,18 @@ private struct RootModals: ViewModifier {
         return content
             // 窗口内容区大小：段落详情按它定尺寸（和工作台里点开的一样大）
             .onGeometryChange(for: CGSize.self) { $0.size } action: { windowSize = $0 }
+            // 页面里点开、要盖住整个窗口的弹窗（工作台的段落详情，见 `WindowModalPortal`）。
+            // 挂在主浮层**之前**：从它里面打开的生图弹窗等走主浮层，要叠在它上面
+            .environment(\.windowModalPortalAvailable, true)
+            .overlayPreferenceValue(WindowModalPortalKey.self) { portal in
+                let portalSize = portal?.size(windowSize) ?? .zero
+                Color.clear
+                    .allowsHitTesting(false)
+                    .appModal(isPresented: Binding(get: { portal != nil }, set: { if !$0 { portal?.close() } }),
+                              width: portalSize.width, height: portalSize.height, handlesEsc: false) {
+                        portal?.content
+                    }
+            }
             // Esc 由下面的路由统一处理，两层浮层都关掉自带的监听
             .appModal(isPresented: isPresented, width: size.width, height: size.height, handlesEsc: false) {
                 switch app.activeModal {

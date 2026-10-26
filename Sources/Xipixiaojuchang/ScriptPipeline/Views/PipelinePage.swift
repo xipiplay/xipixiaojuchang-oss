@@ -108,7 +108,9 @@ struct PipelinePage: View {
         .onGeometryChange(for: CGSize.self) { $0.size } action: { pageSize = $0 }
         // 点开某一段：居中大弹窗盖在分镜网格上（2026-10-12 用户定）。点外面 / Esc 关；上一段 / 下一段在弹窗顶栏。
         // Esc 走 `RootView` 的统一路由（`app.closeWorkbenchSegmentDetail`），这里不自己装监听
-        .appModal(isPresented: segmentDetailPresented, width: segmentDetailSize.width, height: segmentDetailSize.height, handlesEsc: false) {
+        // 2026-10-26 起交给窗口那一层弹（盖住整个窗口，和生视频页点开的一样大），见 `windowModal`
+        .windowModal(isPresented: segmentDetailPresented, pageVisible: app.isScriptPageVisible, pageSize: pageSize,
+                     size: Self.segmentDetailSize(in:)) {
             if let number = openOther {
                 WorkbenchSegmentDetail(episodeIndex: WorkbenchSegmentGrid.otherEpisode, segmentNumber: number,
                                        onSelect: { spot in openOther = spot?.episode == WorkbenchSegmentGrid.otherEpisode ? spot?.segment : nil })
@@ -638,9 +640,10 @@ struct PipelinePage: View {
         Binding(get: { segmentDetailShown }, set: { if !$0 { setOpenSegment(nil); openOther = nil } })
     }
 
-    /// 弹窗大小跟着页面走：四周各留出一圈，背后的网格看得见；太宽的屏幕上不再变宽
-    private var segmentDetailSize: CGSize {
-        CGSize(width: max(min(pageSize.width - 72, 1440), 600), height: max(pageSize.height - 56, 480))
+    /// 弹窗大小：四周各留出一圈，背后看得见；太宽的屏幕上不再变宽。
+    /// 拿窗口内容区算（2026-10-26 起弹在整个窗口上，生视频页点开的段落详情也用这个，见 `RootModals.size`）
+    static func segmentDetailSize(in available: CGSize) -> CGSize {
+        CGSize(width: max(min(available.width - 72, 1440), 600), height: max(available.height - 56, 480))
     }
 
     /// 弹窗开着时把「关掉它」交给 Esc 统一路由，关着时收回

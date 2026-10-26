@@ -74,9 +74,7 @@ struct AppModal<Content: View>: View {
                 .frame(width: width, height: height)
                 // 液态玻璃 + 圆角裁剪 + 浮层阴影（玻璃关闭时：纯色 + 描边，见 `GlassPanelModifier`）
                 .glassPanel(cornerRadius: 18)
-                // 🎯 A-3 轻入场：位移 8pt -> 0（不用 scaleEffect，对 NSTextView/AppKit 材质安全，避免重采样发糊或闪烁）
-                .offset(y: backdropOpacity < 1 ? 8 : 0)
-                .animation(.easeOut(duration: 0.16), value: backdropOpacity)
+                // 面板原地出现，不再从下面 8pt 滑上来（2026-10-26 用户：弹出来再往上滑一下，要去掉）
                 // ⚠️ 面板**绝不能做透明度过渡**（2026-09-19，用户实测"设置/提示弹窗的按钮还在闪"）：
                 // 弹窗里的分段控件 / 有底色按钮的灰底是 **AppKit 材质**，透明度过渡时它**不跟着淡**
                 // —— 淡入的中间帧里"面板半透明、控件灰底满不亮"就是那道闪。
@@ -112,8 +110,7 @@ extension View {
     /// 收 `Binding` 而不是 `Bool`：**"点遮罩 / Esc 关闭"由浮层自己写回**，
     /// 调用处只需把 `onClose` 传给它自己的内容视图即可（尾随闭包就干净地是内容）。
     ///
-    /// ⚠️ `.animation(value:)` 必须挂在**常驻的 ZStack** 上：直接挂在条件分支上，
-    /// 插入/移除就没有动画可挂（这个坑在底部删除条那里踩过一次）。
+    /// 开 / 关本身不带动画（玻璃态会借动画模糊成形，见下面 `.transaction` 的注释）。
     func appModal<C: View>(
         isPresented: Binding<Bool>,
         width: CGFloat? = nil,
@@ -154,7 +151,96 @@ extension View {
             // 这句兜底仍然保留：只要这一层没能正常收尾，整窗就全被它吃掉。
             // **`isPresented == false` 时这一层绝不参与命中** —— 残影在不在都不影响。
             .allowsHitTesting(isPresented.wrappedValue)
-            .animation(.easeOut(duration: 0.16), value: isPresented.wrappedValue)
+            // ⚠️ **开 / 关这一下不能带动画**（2026-10-26，用户录屏：玻璃态弹窗里的输入框闪黑）。
+            // 原来这里挂着 `.animation(value: isPresented)`：`.identity` 管住了 SwiftUI 的过渡，
+            // 但液态玻璃会借这次动画自己「模糊着成形」（约 5 帧），里面的 AppKit 文本框跟不上，
+            // 深色底先露出来 —— 纯色模式没有这一下，所以两种模式的入场还不一样。
+            // 这里把开 / 关的事务动画清掉（调用处包了 `withAnimation` 也一样），
+            // 两种模式都是面板直接出现；遮罩淡入由 `AppModal` 在 onAppear 里另起一次动画，不受影响。
+            .transaction(value: isPresented.wrappedValue) { $0.animation = nil }
         }
+    }
+}
+
+// MARK: - 页面里的弹窗挂到整个窗口上
+
+/// 页面里点开、但要盖住整个窗口的弹窗（2026-10-26 用户：工作台点开的段落详情和生视频页点开的不一样大——
+/// 一个挂在页面里、按页面算大小、不盖左边图标栏，一个挂在整个窗口上）。
+///
+/// 页面照旧管开关和内容（状态、翻段、关了停在哪都在页面里），只把内容通过偏好值交给窗口那一层（`RootModals`）去弹；
+/// 窗口那一层按窗口大小算尺寸、和其他浮层同一个遮罩、同一套层次（生图弹窗等照旧叠在它上面）。
+struct WindowModalPortal {
+    /// 拿窗口内容区大小算弹窗大小
+    let size: (CGSize) -> CGSize
+    let content: AnyView
+    let close: () -> Void
+}
+
+struct WindowModalPortalKey: PreferenceKey {
+    static var defaultValue: WindowModalPortal? { nil }
+    static func reduce(value: inout WindowModalPortal?, nextValue: () -> WindowModalPortal?) {
+        value = value ?? nextValue()
+    }
+}
+
+extension EnvironmentValues {
+    /// 外面有没有窗口那一层接着（`RootModals` 设）。单独测某一页时没有，就照旧弹在页面里
+    @Entry var windowModalPortalAvailable = false
+}
+
+extension View {
+    /// 像 `appModal` 一样挂一个弹窗，但外面有窗口那一层时交给它弹（盖住整个窗口）。
+    /// `size` 拿可用的大小算弹窗大小：交给窗口那一层时是窗口内容区，页面里弹时是 `pageSize`。
+    /// `pageVisible`：页面藏着（切到别的页但没拆掉）时不交过去——原来弹在页面里，跟着页面一起藏
+    func windowModal<C: View>(
+        isPresented: Binding<Bool>,
+        pageVisible: Bool = true,
+        pageSize: CGSize,
+        size: @escaping (CGSize) -> CGSize,
+        @ViewBuilder content: () -> C
+    ) -> some View {
+        modifier(WindowModalModifier(isPresented: isPresented, pageVisible: pageVisible, pageSize: pageSize, size: size, content: content()))
+    }
+}
+
+private struct WindowModalModifier<C: View>: ViewModifier {
+    @Environment(\.windowModalPortalAvailable) private var portalAvailable
+    let isPresented: Binding<Bool>
+    let pageVisible: Bool
+    let pageSize: CGSize
+    let size: (CGSize) -> CGSize
+    let content: C
+
+    func body(content page: Content) -> some View {
+        if portalAvailable {
+            page.background {
+                WindowModalPortalEmitter(isPresented: isPresented, pageVisible: pageVisible, size: size, content: content)
+            }
+        } else {
+            let local = size(pageSize)
+            page.appModal(isPresented: isPresented, width: local.width, height: local.height, handlesEsc: false) { content }
+        }
+    }
+}
+
+/// 只挂偏好值的空视图。工作台状态在这里读：状态变了只有它跟着重算，页面本身不会因此重画
+private struct WindowModalPortalEmitter<C: View>: View {
+    @Environment(\.workbenchBoard) private var board
+    let isPresented: Binding<Bool>
+    let pageVisible: Bool
+    let size: (CGSize) -> CGSize
+    let content: C
+
+    var body: some View {
+        Color.clear.preference(key: WindowModalPortalKey.self, value: portal)
+    }
+
+    private var portal: WindowModalPortal? {
+        guard pageVisible, isPresented.wrappedValue else { return nil }
+        let binding = isPresented
+        // 工作台状态从页面这里带过去：窗口那一层不在 `WorkbenchBoardProvider` 里面，不带的话弹窗里每块各算一遍
+        return WindowModalPortal(size: size,
+                                 content: AnyView(content.environment(\.workbenchBoard, board)),
+                                 close: { binding.wrappedValue = false })
     }
 }

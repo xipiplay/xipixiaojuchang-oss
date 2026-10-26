@@ -604,6 +604,8 @@ struct VideoThumbnailView: View {
     /// 传 true 时按 fit 显示（留边交给外层 `.insetFill` 底），默认 false = 原来的 fill 裁切
     ///（时间轴 / 素材库 / 欢迎页等其他使用处不受影响）。
     var fitsAspect: Bool = false
+    /// 还没拿到图时转圈。垫在播放器下面当封面时关掉：转圈比黑底更扎眼（段落详情预览，2026-10-26）
+    var showsSpinner: Bool = true
 
     @State private var image: NSImage?
 
@@ -611,9 +613,10 @@ struct VideoThumbnailView: View {
     /// 不预置的话会先闪一下转圈再出图（用户反馈的"缩略图会跳"）。
     /// 只查内存、不碰磁盘（`VideoThumbnailCache.cached` 会同步读盘，不适合放进 init）。
     @MainActor
-    init(path: String, fitsAspect: Bool = false) {
+    init(path: String, fitsAspect: Bool = false, showsSpinner: Bool = true) {
         self.path = path
         self.fitsAspect = fitsAspect
+        self.showsSpinner = showsSpinner
         _image = State(initialValue: VideoThumbnailCache.images[path])
     }
 
@@ -634,7 +637,7 @@ struct VideoThumbnailView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                     }
-                } else {
+                } else if showsSpinner {
                     ProgressView()
                         .controlSize(.small)
                 }

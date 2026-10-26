@@ -22,7 +22,10 @@ struct SegmentInlinePlayer: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.82))
-            if let player, videoPath != nil {
+            if let player, let videoPath {
+                // 先垫首帧封面：播放器图层在解出第一帧之前是透明的，原来会露出黑底黑几帧
+                //（2026-10-26 用户录屏：弹窗出来了预览还黑着，内容不同步）。画面同样按比例内缩，出帧后正好盖住它
+                VideoThumbnailView(path: videoPath, fitsAspect: true, showsSpinner: false)
                 AVPlayerContainer(player: player)
                     // 鼠标移到画面上才出播放条（同大预览）
                     .hoverRevealControls {
