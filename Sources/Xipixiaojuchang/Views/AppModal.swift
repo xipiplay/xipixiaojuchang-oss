@@ -72,6 +72,9 @@ struct AppModal<Content: View>: View {
 
             content
                 .frame(width: width, height: height)
+                // 面板空白处的点击在这里接住（2026-10-28 用户录屏：点生图弹窗的空白处，弹窗被关掉）——
+                // 空白处没有东西接点击时，点击会往下落到上面那层 AppKit 遮罩上，被当成「点外面」
+                .background(PanelEventSink())
                 // 液态玻璃 + 圆角裁剪 + 浮层阴影（玻璃关闭时：纯色 + 描边，见 `GlassPanelModifier`）
                 .glassPanel(cornerRadius: 18)
                 // 面板原地出现，不再从下面 8pt 滑上来（2026-10-26 用户：弹出来再往上滑一下，要去掉）

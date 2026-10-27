@@ -2502,19 +2502,26 @@ struct AsyncThumbImage: View {
     }
 }
 
-/// 本地图片异步全尺寸图（预览大图 .fit 用）：未命中后台解码原图，避免主线程卡顿
+/// 本地图片异步全尺寸图（预览大图用）：未命中后台解码原图，避免主线程卡顿。
+/// 默认适配窗口，可缩放 / 拖动（2026-10-28，见 `ZoomableImageView`）
 struct AsyncFullImage: View {
     let path: String?
+    /// 鼠标滚轮缩放；嵌在会滚动的页面里传 false（滚轮留给页面，⌘+滚轮 / 捏合照样缩放）
+    var wheelZooms = true
+    /// 放大后图会铺到边上：按外面容器的圆角裁
+    var cornerRadius: CGFloat = 0
     @State private var image: NSImage?
 
-    init(path: String?) { self.path = path }
+    init(path: String?, wheelZooms: Bool = true, cornerRadius: CGFloat = 0) {
+        self.path = path
+        self.wheelZooms = wheelZooms
+        self.cornerRadius = cornerRadius
+    }
 
     var body: some View {
         Group {
             if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
+                ZoomableImageView(image: image, wheelZooms: wheelZooms, cornerRadius: cornerRadius)
             } else {
                 Color.clear
             }
@@ -3505,11 +3512,38 @@ final class OverlayEventShieldView: NSView {
     override func scrollWheel(with event: NSEvent) { onScroll?() }
 
     override func mouseDown(with event: NSEvent) {
+        // 归因日志：点在哪、窗口多大（弹窗空白处的点击掉到这里过，2026-10-28）
+        let p = event.locationInWindow
+        AppLog.write("modal", "遮罩挡板接到点击 (\(Int(p.x)),\(Int(p.y))) 窗口 \(Int(window?.frame.width ?? 0))×\(Int(window?.frame.height ?? 0))")
         onTap?()
     }
 
     /// 配对吞掉，别让"没有 down 的 up"漏给底下（本项目踩过：顶栏罩子会响应裸 up）
     override func mouseUp(with event: NSEvent) {}
+}
+
+/// 弹窗面板的底层：接住落在面板**空白处**的点击 / 滚轮，什么都不做（2026-10-28 用户录屏：点生图弹窗空白处，弹窗被关掉）。
+///
+/// 面板里没有控件的地方（Spacer、两栏之间的空隙）SwiftUI 不接点击，点击就往下落到 `OverlayEventShieldView` 上，
+/// 被当成「点外面」关掉弹窗。垫在面板背景里，面板里的控件照样盖在它上面（同遮罩挡板的 z-order 实测）。
+struct PanelEventSink: NSViewRepresentable {
+    func makeNSView(context: Context) -> PanelEventSinkView { PanelEventSinkView() }
+    func updateNSView(_ nsView: PanelEventSinkView, context: Context) {}
+}
+
+final class PanelEventSinkView: NSView {
+    override var acceptsFirstResponder: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard !isHidden, alphaValue > 0 else { return nil }
+        return frame.contains(point) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) {}
 }
 
 struct OverlayEventShield: NSViewRepresentable {

@@ -2238,7 +2238,7 @@ struct ImagePreviewSheet: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if let path = selectedResult?.localPath {
-                    AsyncFullImage(path: path)
+                    AsyncFullImage(path: path, cornerRadius: 18)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else if live.results.isEmpty {
                     Color.clear.overlay {

@@ -265,7 +265,7 @@ struct PipelineAssetsPage: View {
                                 }
                             }.padding(12)
                         } else if let imagePath {
-                            AsyncFullImage(path: imagePath).frame(maxWidth: .infinity, maxHeight: .infinity)
+                            AsyncFullImage(path: imagePath, wheelZooms: false, cornerRadius: 14).frame(maxWidth: .infinity, maxHeight: .infinity)
                         } else {
                             VStack(spacing: 6) {
                                 Image(systemName: "photo")

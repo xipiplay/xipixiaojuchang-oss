@@ -359,7 +359,7 @@ struct PreviewSheet: View {
     @ViewBuilder
     private var imagePreview: some View {
         if let localURL = item.existingLocalImageURL {
-            AsyncFullImage(path: localURL.path)
+            AsyncFullImage(path: localURL.path, cornerRadius: 18)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let urlString = item.remoteURL, let url = URL(string: urlString) {
             AsyncImage(url: url) { phase in

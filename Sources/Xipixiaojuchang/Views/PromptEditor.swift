@@ -305,6 +305,12 @@ final class PromptTextView: NSTextView {
             }
             return
         }
+        // 被别的弹窗盖着就不弹（2026-10-28 用户录屏：段落详情上叠开生图弹窗，鼠标在弹窗上移动，
+        // 弹出了后面分镜提示词里「主持人」的放大图）——跟踪区是窗口级的，盖在上面的 SwiftUI 弹窗挡不住
+        guard isTopmost(atWindowPoint: event.locationInWindow) else {
+            if lastHoveredCharIndex != nil { clearHover() }
+            return
+        }
         let point = convert(event.locationInWindow, from: nil)
         let hit = attachment(at: point)
         // ⚠️ 比的是**字符索引**，不是 token：同 token 出现两次时，鼠标在两份之间移动也算
@@ -334,6 +340,14 @@ final class PromptTextView: NSTextView {
     func clearHover() {
         lastHoveredCharIndex = nil
         onHover?(nil, nil)
+    }
+
+    /// 窗口里这一点最上层的是不是自己（或自己里面的子视图）
+    func isTopmost(atWindowPoint point: NSPoint) -> Bool {
+        guard let content = window?.contentView else { return false }
+        let local = content.superview?.convert(point, from: nil) ?? point
+        guard let hit = content.hitTest(local) else { return false }
+        return hit === self || hit.isDescendant(of: self)
     }
 
     /// 把「鼠标当前压着的那张图」记为已悬停，但**不弹**放大浮窗。
