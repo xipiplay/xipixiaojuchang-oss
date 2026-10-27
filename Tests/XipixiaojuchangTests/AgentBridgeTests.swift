@@ -211,17 +211,26 @@ final class AgentBridgeTests: XCTestCase {
         XCTAssertFalse(last.agentMode, "关了之后状态文件写最后一次：agentMode=false")
     }
 
-    func testBackgroundStatusWritesLandInOrderAndTheClosingOneIsImmediate() throws {
+    func testBackgroundStatusWritesLandInOrderAndTheClosingOneIsImmediate() async throws {
         // 软件里用的那一个：状态文件在后台写（批量回传时主线程不再编码 360KB 的 JSON）
         let dir = root.appendingPathComponent("background", isDirectory: true)
         let other = AgentBridge(root: dir, writesStatusInBackground: true)
-        let (key, _) = fixture(titles: ["第一集"])
+        var (key, episodes) = fixture(titles: ["第一集"])
+        episodes[0].splitText = "【场景】客厅\n【角色】张三\n【道具】无\n【本段在场】张三\n张三：你好。\n=== 00:00-00:30"
+        app.savePipelineArchive(ProjectPipelineArchive(wholeScript: "", episodes: episodes), for: key)
         defer { app.removePipelineArchive(for: key) }
         other.start(app: app, poll: false)
+        // 每集的情况（要解析分割）在后台算：开关当场返回，主线程不等（2026-10-28 用户：启动后第一次开接力卡 0.7 秒）
+        XCTAssertFalse(FileManager.default.fileExists(atPath: other.statusFile.path), "还在后台算，没在主线程上当场写")
+        other.tick(now: Date())
+        XCTAssertFalse(FileManager.default.fileExists(atPath: other.statusFile.path), "算完之前每秒的刷新也不写")
+        await other.waitForStatusWarmUp()
         let decoder = JSONDecoder(); decoder.dateDecodingStrategy = .iso8601
         let first = try decoder.decode(AgentStatus.self, from: Data(contentsOf: other.statusFile))
-        XCTAssertTrue(first.agentMode, "开启那一次同步写，马上就有")
-        XCTAssertTrue(first.projects.contains { $0.id == key })
+        XCTAssertTrue(first.agentMode, "算完马上写一份")
+        let project = try XCTUnwrap(first.projects.first { $0.id == key })
+        XCTAssertEqual(project.episodes.first?.split, true)
+        XCTAssertEqual(project.episodes.first?.named, SplitSegments.isNamed(episodes[0].splitText ?? ""), "和主线程上算的一样")
         other.tick(now: first.updatedAt.addingTimeInterval(9))
         other.flushStatusWrites()
         let beat = try decoder.decode(AgentStatus.self, from: Data(contentsOf: other.statusFile))

@@ -91,7 +91,7 @@ struct AgentStatus: Codable, Equatable, Sendable {
 }
 
 /// 一集的原文 / 分割没变，字数和分割段数就不用重算（每秒一次，这些在主线程上算：60 集 × 多个项目曾每次占 ~180 ms）
-struct EpisodeStatusCacheEntry {
+struct EpisodeStatusCacheEntry: Sendable {
     var text: String
     var splitText: String?
     var chars: Int
@@ -99,6 +99,18 @@ struct EpisodeStatusCacheEntry {
     var hasSplit: Bool
     var segments: Int?
     var named: Bool
+
+    /// 算一集（要把分割文本解析一遍，大项目几十集一起算很慢）。不碰主线程的东西：开接力时在后台批量算（见 `AgentBridge.warmUpStatus`）
+    nonisolated static func make(text: String, splitText: String?) -> EpisodeStatusCacheEntry {
+        EpisodeStatusCacheEntry(
+            text: text, splitText: splitText, chars: text.count,
+            splitChars: splitText?.count ?? 0,
+            hasSplit: !(splitText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            segments: splitText.flatMap { StoryboardInference.expectedBlockCount(in: $0) },
+            named: SplitSegments.isNamed(splitText ?? ""))
+    }
+
+    func matches(_ episode: Episode) -> Bool { text == episode.text && splitText == episode.splitText }
 }
 
 extension AgentBridge {
@@ -141,15 +153,10 @@ extension AgentBridge {
         let episodes = archive.episodes.enumerated().map { index, episode -> AgentStatus.Episode in
             seen.insert(episode.id)
             let cached: EpisodeStatusCacheEntry
-            if let hit = episodeStatusCache[episode.id], hit.text == episode.text, hit.splitText == episode.splitText {
+            if let hit = episodeStatusCache[episode.id], hit.matches(episode) {
                 cached = hit
             } else {
-                cached = EpisodeStatusCacheEntry(
-                    text: episode.text, splitText: episode.splitText, chars: episode.text.count,
-                    splitChars: episode.splitText?.count ?? 0,
-                    hasSplit: !(episode.splitText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                    segments: episode.splitText.flatMap { StoryboardInference.expectedBlockCount(in: $0) },
-                    named: SplitSegments.isNamed(episode.splitText ?? ""))
+                cached = .make(text: episode.text, splitText: episode.splitText)
                 episodeStatusCache[episode.id] = cached
             }
             return AgentStatus.Episode(

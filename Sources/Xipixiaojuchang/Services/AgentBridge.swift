@@ -150,6 +150,10 @@ final class AgentBridge {
     private var lastStatusWrite = Date.distantPast
     /// 每集的字数 / 分割段数缓存（见 `EpisodeStatusCacheEntry`）
     var episodeStatusCache: [UUID: EpisodeStatusCacheEntry] = [:]
+    /// 开接力后每集的情况在后台算完了没有（2026-10-28 用户：启动后第一次开接力卡 0.7 秒——全部项目每一集的分割都在主线程上解析一遍）。
+    /// 没算完之前每秒的状态刷新先不写，算完写一份
+    private var statusReady = false
+    private var warmUpTask: Task<Void, Never>?
 
     /// 状态文件在后台编码、写盘（2026-10-21 用户：批量回传时很卡——状态文件 360KB，原来每次都在主线程上编码，一次 0.3～0.5 秒，
     /// 批量任务时状态几乎每秒都变）。主线程只组装、比较；测试默认同步写，好在 `tick()` 之后马上读文件
@@ -192,13 +196,16 @@ final class AgentBridge {
                 }
             }
         }
-        writeStatus(now: Date(), force: true)
+        warmUpStatus()
         AppLog.write("agent", "外部智能体接力已开启，目录：\(root.path)")
     }
 
     func stop() {
         loop?.cancel()
         loop = nil
+        warmUpTask?.cancel()
+        warmUpTask = nil
+        statusReady = false
         isRunning = false
         activity.state = .off
         let pending = waiters
@@ -279,7 +286,34 @@ final class AgentBridge {
         collectReplies(now: now)
         processCommands(now: now)
         updateActivity(now: now)
-        writeStatus(now: now)
+        if statusReady { writeStatus(now: now) }
+    }
+
+    /// 开接力时：缓存里没有 / 过期的集在后台算好，再写第一份状态文件（主线程只抄一份各集原文和分割，很快）。
+    /// 测试（状态同步写）里当场算完、当场写，好在 `start` 之后马上读文件
+    private func warmUpStatus() {
+        let missing: [(id: UUID, text: String, splitText: String?)] = app.map { app in
+            app.projectMetas.keys.compactMap { app.pipelineArchive(for: $0) }.flatMap(\.episodes)
+                .filter { episode in !(episodeStatusCache[episode.id]?.matches(episode) ?? false) }
+                .map { ($0.id, $0.text, $0.splitText) }
+        } ?? []
+        guard writesStatusInBackground, !missing.isEmpty else {
+            statusReady = true
+            writeStatus(now: Date(), force: true)
+            return
+        }
+        let started = Date()
+        warmUpTask = Task { @MainActor [weak self] in
+            let entries = await Task.detached(priority: .userInitiated) {
+                missing.map { ($0.id, EpisodeStatusCacheEntry.make(text: $0.text, splitText: $0.splitText)) }
+            }.value
+            guard let self, !Task.isCancelled, self.isRunning else { return }
+            for (id, entry) in entries { self.episodeStatusCache[id] = entry }
+            self.statusReady = true
+            self.writeStatus(now: Date(), force: true)
+            self.warmUpTask = nil
+            AppLog.write("agent", "状态文件已写出：后台算了 \(entries.count) 集，用了 \(Int(Date().timeIntervalSince(started) * 1000)) ms")
+        }
     }
 
     private func collectReplies(now: Date) {
@@ -416,6 +450,11 @@ final class AgentBridge {
         }
         lastStatus = neutral
         lastStatusWrite = now
+    }
+
+    /// 等开接力时后台那一遍算完（测试用）
+    func waitForStatusWarmUp() async {
+        await warmUpTask?.value
     }
 
     /// 等排着的状态文件写完（测试用）
