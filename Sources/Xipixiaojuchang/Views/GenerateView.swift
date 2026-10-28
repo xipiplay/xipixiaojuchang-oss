@@ -5087,11 +5087,14 @@ struct DropdownOverlay: View {
                                 .onChange(of: g.size) { _, new in panelSize = new }
                         }
                     )
+                    // 点在下拉面板里（空白处）不算点外面（2026-10-28）；⚠️ 要在 offset 之前量，之后量是挪动前的位置
+                    .shieldExempt()
                     // 定位：面板左上角 = 锚点上方 6pt（放不下翻到下方）；入场时从下方 8pt 滑上来
                     .offset(x: origin(in: geo.size).x,
                             y: origin(in: geo.size).y + (appeared ? 0 : 8))
                     .opacity(appeared && panelSize != .zero ? 1 : 0)
             }
+            .collectsShieldExemptions()
         }
         .onChange(of: panelSize) { _, size in
             // 量到尺寸之后才揭幕（否则第一帧会出现在错误位置闪一下）

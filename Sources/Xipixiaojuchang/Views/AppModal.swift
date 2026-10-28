@@ -77,6 +77,8 @@ struct AppModal<Content: View>: View {
                 .background(PanelEventSink())
                 // 液态玻璃 + 圆角裁剪 + 浮层阴影（玻璃关闭时：纯色 + 描边，见 `GlassPanelModifier`）
                 .glassPanel(cornerRadius: 18)
+                // 再兜一层：点击还是掉到遮罩挡板上时，挡板按面板区域判断，点在面板里不关
+                .shieldExempt()
                 // 面板原地出现，不再从下面 8pt 滑上来（2026-10-26 用户：弹出来再往上滑一下，要去掉）
                 // ⚠️ 面板**绝不能做透明度过渡**（2026-09-19，用户实测"设置/提示弹窗的按钮还在闪"）：
                 // 弹窗里的分段控件 / 有底色按钮的灰底是 **AppKit 材质**，透明度过渡时它**不跟着淡**
@@ -86,6 +88,7 @@ struct AppModal<Content: View>: View {
         }
         // 整个 ZStack 也要铺满 overlay 给的空间（否则连"外面"都没有）
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .collectsShieldExemptions()
         // Esc 关闭。
         // ⚠️ **不能用 `.onExitCommand`**：它靠**键盘焦点**分发，而浮层拿不到焦点 ——
         // 实测按 Esc 毫无反应（用户反馈）。改用本地事件监听，只在浮层存在期间挂着。

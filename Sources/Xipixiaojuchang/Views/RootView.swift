@@ -313,12 +313,15 @@ struct RootView: View {
                                 height: app.previewFullscreen ? geo.size.height : geo.size.height * PreviewLayout.heightRatio
                             )
                             .glassPanel(cornerRadius: app.previewFullscreen ? 0 : 20)
+                            // 点在面板里（图片四周、空白处）不算点外面（2026-10-28）
+                            .shieldExempt()
                             // 历史版本：单独一条贴在弹窗外面右边，不挤视频（2026-10-14）；全屏时不显示
                             .overlay(alignment: .topTrailing) {
                                 if !app.previewFullscreen {
                                     ShotVersionColumn(shotID: shotID)
                                         .frame(height: geo.size.height * PreviewLayout.heightRatio)
                                         .glassPanel(cornerRadius: 20)
+                                        .shieldExempt()
                                         .offset(x: VersionStripLayout.width + VersionStripLayout.gap)
                                 }
                             }
@@ -327,6 +330,7 @@ struct RootView: View {
                             .offset(y: previewPanelOffsetY)
                     }
                 }
+                .collectsShieldExemptions()
                 .opacity(previewOverlayOpacity)
                 .onAppear { AppLog.write("previewOverlay", "显示 shot=\(shotID)") }
             } else if let item = app.previewingItem {
@@ -348,11 +352,13 @@ struct RootView: View {
                             .frame(width: geo.size.width * PreviewLayout.widthRatio,
                                    height: geo.size.height * PreviewLayout.heightRatio)
                             .glassPanel(cornerRadius: 18)
+                            .shieldExempt()
                             // 入场姿态：只有弹窗本体缩放/位移，遮罩不参与
                             .scaleEffect(previewPanelScale)
                             .offset(y: previewPanelOffsetY)
                     }
                 }
+                .collectsShieldExemptions()
                 .opacity(previewOverlayOpacity)
             } else if let path = app.previewingStandaloneImagePath {
                 GeometryReader { geo in
@@ -375,10 +381,12 @@ struct RootView: View {
                         .frame(width: geo.size.width * PreviewLayout.widthRatio,
                                height: geo.size.height * PreviewLayout.heightRatio)
                         .glassPanel(cornerRadius: 18)
+                        .shieldExempt()
                         .scaleEffect(previewPanelScale)
                         .offset(y: previewPanelOffsetY)
                     }
                 }
+                .collectsShieldExemptions()
                 .opacity(previewOverlayOpacity)
             } else if let imageItemID = app.previewingImageItemID,
                       let imageItem = app.imageItems.first(where: { $0.id == imageItemID }) {
@@ -401,11 +409,13 @@ struct RootView: View {
                             .frame(width: geo.size.width * PreviewLayout.widthRatio,
                                    height: geo.size.height * PreviewLayout.heightRatio)
                             .glassPanel(cornerRadius: 18)
+                            .shieldExempt()
                             // 历史版本：单独一条贴在弹窗外面右边，不挤大图（2026-10-14）
                             .overlay(alignment: .topTrailing) {
                                 ImageVersionColumn(itemID: imageItem.id)
                                     .frame(height: geo.size.height * PreviewLayout.heightRatio)
                                     .glassPanel(cornerRadius: 18)
+                                    .shieldExempt()
                                     .offset(x: VersionStripLayout.width + VersionStripLayout.gap)
                             }
                             // 入场姿态：只有弹窗本体缩放/位移，遮罩不参与
@@ -413,6 +423,7 @@ struct RootView: View {
                             .offset(y: previewPanelOffsetY)
                     }
                 }
+                .collectsShieldExemptions()
                 .opacity(previewOverlayOpacity)
             }
         }
@@ -1629,6 +1640,7 @@ private struct HistoryDrawerLayer: ViewModifier {
                     // 底 = 液态玻璃（同素材库 / 任务抽屉，2026-10-08 由 `.regularMaterial` 换过来；玻璃关闭时纯色），已含圆角裁剪
                     .glassPanel(in: drawerShape, shadow: false)
                     .contentShape(Rectangle())
+                    .shieldExempt()
                     .padding(.trailing, AppWindowShellLayout.edgeInset)
                     .offset(y: bounds?.minY ?? 0)
                     // 首次打开才确定分镜：尺寸和纵向位置必须立即就位，
@@ -1641,6 +1653,7 @@ private struct HistoryDrawerLayer: ViewModifier {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .ignoresSafeArea()
+            .collectsShieldExemptions()
             .allowsHitTesting(app.showHistoryDrawer && bounds != nil)
             }
             .ignoresSafeArea()
@@ -1709,6 +1722,7 @@ private struct RightWorkspaceDrawerLayer: ViewModifier {
                     // 不要有阴影：外层滑动层 `.clipShape` 会把它裁掉。
                     .glassPanel(in: drawerShape, shadow: false)
                     .contentShape(Rectangle())
+                    .shieldExempt()
                     .modifier(DrawerSlideMotion(progress: isOpen ? 1 : 0,
                                                closedOffset: AppWindowShellLayout.drawerWidth + 60))
                     .allowsHitTesting(isOpen)
@@ -1724,6 +1738,7 @@ private struct RightWorkspaceDrawerLayer: ViewModifier {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             // overlay 的 frame 也要延伸进原生标题栏，否则抽屉会整体低 32pt。
             .ignoresSafeArea()
+            .collectsShieldExemptions()
             .allowsHitTesting(isOpen)
         }
         .onChange(of: app.showLibraryDrawer) { _, show in

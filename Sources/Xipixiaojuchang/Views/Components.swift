@@ -3511,9 +3511,19 @@ final class OverlayEventShieldView: NSView {
     /// ⚠️ 别"顺手"补一句 `super.scrollWheel(with:)` —— 那正是穿透的来源。
     override func scrollWheel(with event: NSEvent) { onScroll?() }
 
+    /// 本层面板占的区域（本视图坐标，左上原点）：点在这里面是「点面板空白处」，不是「点外面」
+    var exemptRects: [CGRect] = []
+
     override func mouseDown(with event: NSEvent) {
         // 归因日志：点在哪、窗口多大（弹窗空白处的点击掉到这里过，2026-10-28）
         let p = event.locationInWindow
+        let local = convert(p, from: nil)
+        // 面板空白处 / 图片四周的点击会掉到挡板上（2026-10-28 用户：看图、下拉、抽屉等好多弹层点里面就关）：
+        // 点在本层面板里就只吞掉，不关
+        if exemptRects.contains(where: { $0.contains(local) }) {
+            AppLog.write("modal", "遮罩挡板接到点击 (\(Int(p.x)),\(Int(p.y)))，在面板里，不关")
+            return
+        }
         AppLog.write("modal", "遮罩挡板接到点击 (\(Int(p.x)),\(Int(p.y))) 窗口 \(Int(window?.frame.width ?? 0))×\(Int(window?.frame.height ?? 0))")
         onTap?()
     }
@@ -3546,21 +3556,92 @@ final class PanelEventSinkView: NSView {
     override func scrollWheel(with event: NSEvent) {}
 }
 
-struct OverlayEventShield: NSViewRepresentable {
+/// 弹层遮罩挡板。点在本层面板（`.shieldExempt()` 标过的区域）里不算「点外面」——
+/// 面板从外层 `.collectsShieldExemptions()` 那里经环境传下来，挡板自己再换算到本视图坐标
+struct OverlayEventShield: View {
     var onTap: () -> Void
     /// 可选：滚轮回调（默认 nil = 只吞不通知）
     var onScroll: (() -> Void)? = nil
 
+    @Environment(\.shieldExemptRects) private var exemptRects
+    @State private var origin: CGPoint = .zero
+
+    var body: some View {
+        OverlayEventShieldRepresentable(
+            onTap: onTap,
+            onScroll: onScroll,
+            exemptRects: exemptRects.map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+        )
+        .background(GeometryReader { g in
+            let o = g.frame(in: .global).origin
+            Color.clear
+                .onAppear { origin = o }
+                .onChange(of: o) { _, new in origin = new }
+        })
+    }
+}
+
+private struct OverlayEventShieldRepresentable: NSViewRepresentable {
+    var onTap: () -> Void
+    var onScroll: (() -> Void)?
+    var exemptRects: [CGRect]
+
     func makeNSView(context: Context) -> OverlayEventShieldView {
         let view = OverlayEventShieldView()
-        view.onTap = onTap
-        view.onScroll = onScroll
+        updateNSView(view, context: context)
         return view
     }
 
     func updateNSView(_ nsView: OverlayEventShieldView, context: Context) {
         nsView.onTap = onTap
         nsView.onScroll = onScroll
+        nsView.exemptRects = exemptRects
+    }
+}
+
+/// 弹层面板占的区域（全局坐标），由面板 `.shieldExempt()` 报上来
+struct ShieldExemptKey: PreferenceKey {
+    static let defaultValue: [CGRect] = []
+    static func reduce(value: inout [CGRect], nextValue: () -> [CGRect]) { value += nextValue() }
+}
+
+private struct ShieldExemptRectsKey: EnvironmentKey {
+    static let defaultValue: [CGRect] = []
+}
+
+extension EnvironmentValues {
+    var shieldExemptRects: [CGRect] {
+        get { self[ShieldExemptRectsKey.self] }
+        set { self[ShieldExemptRectsKey.self] = newValue }
+    }
+}
+
+private struct CollectsShieldExemptions: ViewModifier {
+    @State private var rects: [CGRect] = []
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.shieldExemptRects, rects)
+            .onPreferenceChange(ShieldExemptKey.self) { new in
+                if new != rects { rects = new }
+            }
+            // 本层收完就清掉，别漏给外面那层（叠开的弹窗各管各的）
+            .transformPreference(ShieldExemptKey.self) { $0 = [] }
+    }
+}
+
+extension View {
+    /// 标成本层弹层的面板：点在这里面，遮罩挡板不当成「点外面」。
+    /// ⚠️ 挂在 `.offset` 之前：挂在之后量到的是挪动前的位置
+    func shieldExempt() -> some View {
+        background(GeometryReader { g in
+            Color.clear.preference(key: ShieldExemptKey.self, value: [g.frame(in: .global)])
+        })
+    }
+
+    /// 挂在弹层（遮罩挡板 + 面板）的外层：收集面板区域交给本层挡板
+    func collectsShieldExemptions() -> some View {
+        modifier(CollectsShieldExemptions())
     }
 }
 
