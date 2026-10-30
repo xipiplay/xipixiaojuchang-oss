@@ -724,15 +724,19 @@ private struct DetailBody: View {
 // MARK: - 页头右上角：视频生成失败
 
 /// 失败提示那一行本身：「⚠ 视频生成失败」按钮 +「重试视频」（「在生视频页查看」2026-10-15 去掉）。
-/// 原因不再直接铺在页头（2026-10-21 用户：长原因把页头撑坏、翻页按钮被挤变形），点「视频生成失败」弹窗看全文
+/// 原因不再直接铺在页头（2026-10-21 用户：长原因把页头撑坏、翻页按钮被挤变形），点「视频生成失败」看全文：
+/// 和任务列表同一个浮层 `TaskErrorDetail`（2026-10-30 用户：不要系统弹窗，任务列表那种就行）
 struct FailureNoteRow: View {
+    /// 失败原因原文（空 = 没有返回原因）
+    let reason: String
     let retryDisabled: Bool
-    let onShowReason: () -> Void
     let onRetry: () -> Void
+
+    @State private var showReason = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Button(action: onShowReason) {
+            Button { showReason = true } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "exclamationmark.triangle.fill")
                     Text("视频生成失败").font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
@@ -744,6 +748,9 @@ struct FailureNoteRow: View {
             .buttonStyle(QuietButtonStyle(hover: .fill(radius: 6)))
             .help("点开看失败原因")
             .accessibilityIdentifier("workbench-segment-failure-reason")
+            .dropdownPopover(isPresented: $showReason) {
+                TaskErrorDetail(raw: reason.isEmpty ? "没有返回原因" : reason)
+            }
             Button("重试视频", action: onRetry)
                 .buttonStyle(OutlineButtonStyle()).controlSize(.small)
                 .disabled(retryDisabled)
@@ -754,7 +761,7 @@ struct FailureNoteRow: View {
 }
 
 /// 分段详情页页头右上角的失败提示（2026-10-10 用户定：原来在页面里单独占一行的横幅，挪到页头右边——进了某一段，
-/// 原来放「原文 / 分段 / 时长分割」的位置没用了）。这一段视频最近一次生成失败了才显示：点「视频生成失败」弹窗看原因，
+/// 原来放「原文 / 分段 / 时长分割」的位置没用了）。这一段视频最近一次生成失败了才显示：点「视频生成失败」浮层看原因，
 /// 旁边是重试；没失败就什么都不画
 struct WorkbenchSegmentFailureNote: View {
     @Environment(AppModel.self) private var app
@@ -763,8 +770,6 @@ struct WorkbenchSegmentFailureNote: View {
     let segmentNumber: Int
 
     @State private var showRetryConfirm = false
-    /// 点「视频生成失败」看原因全文
-    @State private var showReason = false
     @State private var infoMessage = ""
     @State private var showInfo = false
 
@@ -802,21 +807,10 @@ struct WorkbenchSegmentFailureNote: View {
     }
 
     private func note(_ shot: ShotDraft) -> some View {
-        let raw = reason(shot)
-        return FailureNoteRow(retryDisabled: app.submittingShotIDs.contains(shot.id),
-                              onShowReason: { showReason = true },
-                              onRetry: { showRetryConfirm = true })
+        FailureNoteRow(reason: reason(shot),
+                       retryDisabled: app.submittingShotIDs.contains(shot.id),
+                       onRetry: { showRetryConfirm = true })
         .accessibilityIdentifier("workbench-segment-failure")
-        .alert("视频生成失败", isPresented: $showReason) {
-            Button("复制原因") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(raw, forType: .string)
-            }
-            .disabled(raw.isEmpty)
-            Button("好", role: .cancel) {}
-        } message: {
-            Text(raw.isEmpty ? "没有返回原因" : raw)
-        }
         .alert("重试这一段的视频？", isPresented: $showRetryConfirm) {
             Button("取消", role: .cancel) {}
             Button("重试") { retry(shot) }

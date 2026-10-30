@@ -4583,6 +4583,10 @@ struct MaterialSection: View {
     /// 生图提示词是短句手写的，按素材名匹配命中率低，用户明确要求去掉。
     var showsAutoMatch: Bool = true
 
+    /// 标题换成分类标签「全部 (N) / 图片 / 视频 / 音频」，点哪类只看哪类（2026-10-30 用户：数素材得一个个数）。
+    /// 只有分镜开：生图条目一般就两三张图，用不上
+    var showsTypeTabs: Bool = false
+
     /// 空态提示文案（图片条目只接受图片，文案与分镜不同）
     var emptyHint: String = "从素材库添加图片 / 视频 / 音频，提示词用 @ 引用"
 
@@ -4597,12 +4601,43 @@ struct MaterialSection: View {
     /// 拖入素材库条目
     var onDrop: (UUID) -> Void
 
+    enum TypeFilter: Hashable { case all, image, video, audio }
+    @State private var typeFilter: TypeFilter = .all
+
     private var isEmpty: Bool { imageRefs.isEmpty && videoRefs.isEmpty && audioRefs.isEmpty }
+
+    /// 标签上的个数：0 个不写括号（和参考图一样）
+    static func tabLabel(_ name: String, count: Int) -> String { count > 0 ? "\(name) (\(count))" : name }
+
+    private var typeTabs: [(label: String, value: TypeFilter)] {
+        [(Self.tabLabel("全部", count: imageRefs.count + videoRefs.count + audioRefs.count), .all),
+         (Self.tabLabel("图片", count: imageRefs.count), .image),
+         (Self.tabLabel("视频", count: videoRefs.count), .video),
+         (Self.tabLabel("音频", count: audioRefs.count), .audio)]
+    }
+
+    private func shows(_ kind: TypeFilter) -> Bool { !showsTypeTabs || typeFilter == .all || typeFilter == kind }
+
+    /// 选中的那类一个都没有（比如切到「视频」）
+    private var filteredEmpty: Bool {
+        switch showsTypeTabs ? typeFilter : .all {
+        case .all: isEmpty
+        case .image: imageRefs.isEmpty
+        case .video: videoRefs.isEmpty
+        case .audio: audioRefs.isEmpty
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("素材").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                if showsTypeTabs {
+                    SegmentedBar(options: typeTabs, selection: $typeFilter)
+                        .frame(width: 280)
+                        .accessibilityIdentifier("material-type-tabs")
+                } else {
+                    Text("素材").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                }
                 Button(action: onAdd) {
                     Label("添加", systemImage: "plus")
                         .font(.caption)
@@ -4635,36 +4670,48 @@ struct MaterialSection: View {
                     .foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 36)
+            } else if filteredEmpty {
+                Text("这一类没有素材")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 36)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(Array(imageRefs.enumerated()), id: \.element.id) { i, ref in
-                            if let item = app.libraryItem(ref.libraryItemID) {
-                                MaterialStripCell(
-                                    item: item,
-                                    fallbackName: "图\(i + 1)",
-                                    onDelete: { onRemove?(ref.id, "图", i + 1) },
-                                    role: ref.role,
-                                    onCycleRole: onCycleRole == nil ? nil : { onCycleRole?(ref.id) }
-                                )
+                        if shows(.image) {
+                            ForEach(Array(imageRefs.enumerated()), id: \.element.id) { i, ref in
+                                if let item = app.libraryItem(ref.libraryItemID) {
+                                    MaterialStripCell(
+                                        item: item,
+                                        fallbackName: "图\(i + 1)",
+                                        onDelete: { onRemove?(ref.id, "图", i + 1) },
+                                        role: ref.role,
+                                        onCycleRole: onCycleRole == nil ? nil : { onCycleRole?(ref.id) }
+                                    )
+                                }
                             }
                         }
-                        ForEach(Array(videoRefs.enumerated()), id: \.element.id) { i, ref in
-                            if let item = app.libraryItem(ref.libraryItemID) {
-                                MaterialStripCell(
-                                    item: item,
-                                    fallbackName: "视频\(i + 1)",
-                                    onDelete: { onRemove?(ref.id, "视频", i + 1) }
-                                )
+                        if shows(.video) {
+                            ForEach(Array(videoRefs.enumerated()), id: \.element.id) { i, ref in
+                                if let item = app.libraryItem(ref.libraryItemID) {
+                                    MaterialStripCell(
+                                        item: item,
+                                        fallbackName: "视频\(i + 1)",
+                                        onDelete: { onRemove?(ref.id, "视频", i + 1) }
+                                    )
+                                }
                             }
                         }
-                        ForEach(Array(audioRefs.enumerated()), id: \.element.id) { i, ref in
-                            if let item = app.libraryItem(ref.libraryItemID) {
-                                MaterialStripCell(
-                                    item: item,
-                                    fallbackName: "音频\(i + 1)",
-                                    onDelete: { onRemove?(ref.id, "音频", i + 1) }
-                                )
+                        if shows(.audio) {
+                            ForEach(Array(audioRefs.enumerated()), id: \.element.id) { i, ref in
+                                if let item = app.libraryItem(ref.libraryItemID) {
+                                    MaterialStripCell(
+                                        item: item,
+                                        fallbackName: "音频\(i + 1)",
+                                        onDelete: { onRemove?(ref.id, "音频", i + 1) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -5473,6 +5520,7 @@ struct EditPromptSheet: View {
                 imageRefs: liveShot.imageRefs,
                 videoRefs: liveShot.videoRefs,
                 audioRefs: liveShot.audioRefs,
+                showsTypeTabs: true,
                 // 「添加」打开左侧素材库抽屉（浮在本弹窗之上，可拖可双击），并把"加到哪儿"带过去
                 onAdd: {
                     withAnimation(.easeInOut(duration: 0.2)) {
